@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau (Client Executor / LocalScript)
--- Updated: Removed horizontal stagger UI controls & defaulted Gameplay Paused Screen removal to ON.
+-- Updated: Targeting Game:GetService("CoreGui").RobloxGui.Modules.NetworkPauseNotification for Gameplay Paused removal.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -53,7 +53,7 @@ titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
 titleLabel.Text = "Interface Hub (OmniFling Hub)"
-titleLabel.TextColor3 = Color3.fromRGB(180, 190, 210)
+titleLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
@@ -70,7 +70,7 @@ minimizeButton.Position = UDim2.new(0, 0, 0, 0)
 minimizeButton.BackgroundTransparency = 1
 minimizeButton.Font = Enum.Font.GothamBold
 minimizeButton.Text = "-"
-minimizeButton.TextColor3 = Color3.fromRGB(160, 170, 190)
+minimizeButton.TextColor3 = Color3.fromRGB(140, 210, 255)
 minimizeButton.TextSize = 16
 minimizeButton.Parent = buttonHolder
 
@@ -80,7 +80,7 @@ closeButton.Position = UDim2.new(0, 35, 0, 0)
 closeButton.BackgroundTransparency = 1
 closeButton.Font = Enum.Font.GothamBold
 closeButton.Text = "×"
-closeButton.TextColor3 = Color3.fromRGB(220, 100, 100)
+closeButton.TextColor3 = Color3.fromRGB(130, 200, 255)
 closeButton.TextSize = 18
 closeButton.Parent = buttonHolder
 
@@ -112,7 +112,7 @@ local function createTabButton(name, order)
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = name
-    btn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    btn.TextColor3 = Color3.fromRGB(150, 220, 255)
     btn.TextSize = 13
     btn.LayoutOrder = order
     btn.Parent = categoryBar
@@ -152,8 +152,8 @@ local combatContainer = createTabContainer("CombatContainer", 850)
 local playerContainer = createTabContainer("PlayerContainer", 880)
 
 espContainer.Visible = true
-espTabBtn.BackgroundColor3 = Color3.fromRGB(50, 70, 100)
-espTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+espTabBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
+espTabBtn.TextColor3 = Color3.fromRGB(200, 245, 255)
 
 local warningOverlay = Instance.new("Frame")
 warningOverlay.Size = UDim2.new(1, 0, 1, 0)
@@ -173,7 +173,7 @@ warningText.Position = UDim2.new(0, 20, 0.3, 0)
 warningText.BackgroundTransparency = 1
 warningText.Font = Enum.Font.GothamBold
 warningText.Text = "Are you sure you want to close the Hub?"
-warningText.TextColor3 = Color3.fromRGB(220, 220, 230)
+warningText.TextColor3 = Color3.fromRGB(170, 230, 255)
 warningText.TextSize = 14
 warningText.TextWrapped = true
 warningText.ZIndex = 11
@@ -182,10 +182,10 @@ warningText.Parent = warningOverlay
 local confirmCloseBtn = Instance.new("TextButton")
 confirmCloseBtn.Size = UDim2.new(0.45, 0, 0, 35)
 confirmCloseBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
-confirmCloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+confirmCloseBtn.BackgroundColor3 = Color3.fromRGB(35, 70, 110)
 confirmCloseBtn.Font = Enum.Font.GothamBold
 confirmCloseBtn.Text = "Yes, Close"
-confirmCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+confirmCloseBtn.TextColor3 = Color3.fromRGB(180, 240, 255)
 confirmCloseBtn.TextSize = 13
 confirmCloseBtn.ZIndex = 11
 confirmCloseBtn.Parent = warningOverlay
@@ -200,7 +200,7 @@ cancelCloseBtn.Position = UDim2.new(0.52, 0, 0.65, 0)
 cancelCloseBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
 cancelCloseBtn.Font = Enum.Font.GothamBold
 cancelCloseBtn.Text = "Cancel"
-cancelCloseBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+cancelCloseBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
 cancelCloseBtn.TextSize = 13
 cancelCloseBtn.ZIndex = 11
 cancelCloseBtn.Parent = warningOverlay
@@ -229,12 +229,12 @@ local function createButton(parent, text, color, order)
 end
 
 -- ESP & World Tab Buttons (Defaulted pausedScreenButton to ON)
-local humEspButton = createButton(espContainer, "Humanoid Box ESP (Box + Health): OFF", Color3.fromRGB(100, 220, 255), 1)
-local highlightEspButton = createButton(espContainer, "Humanoid Highlight ESP: OFF", Color3.fromRGB(255, 170, 100), 2)
-local pausedScreenButton = createButton(espContainer, "Remove Gameplay Paused Screen: ON", Color3.fromRGB(25, 75, 50), 3)
-local noTextureButton = createButton(espContainer, "No Texture: OFF", Color3.fromRGB(255, 220, 100), 4)
-local noFogButton = createButton(espContainer, "No Fog / Clear Atmosphere: OFF", Color3.fromRGB(170, 220, 255), 5)
-local fullBrightButton = createButton(espContainer, "Full Bright: OFF", Color3.fromRGB(255, 255, 150), 6)
+local humEspButton = createButton(espContainer, "Humanoid Box ESP (Box + Health): OFF", Color3.fromRGB(100, 235, 255), 1)
+local highlightEspButton = createButton(espContainer, "Humanoid Highlight ESP: OFF", Color3.fromRGB(140, 200, 255), 2)
+local pausedScreenButton = createButton(espContainer, "Remove Gameplay Paused Screen: ON", Color3.fromRGB(120, 255, 215), 3)
+local noTextureButton = createButton(espContainer, "No Texture: OFF", Color3.fromRGB(180, 210, 255), 4)
+local noFogButton = createButton(espContainer, "No Fog / Clear Atmosphere: OFF", Color3.fromRGB(140, 230, 255), 5)
+local fullBrightButton = createButton(espContainer, "Full Bright: OFF", Color3.fromRGB(175, 235, 255), 6)
 
 -- COMBAT TAB SETUP
 local targetNearestEnabled = false
@@ -250,9 +250,8 @@ flingStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
 flingStatusLabel.LayoutOrder = 1
 flingStatusLabel.Parent = combatContainer
 
-local targetNearestBtn = createButton(combatContainer, "Target Nearest: OFF", Color3.fromRGB(255, 200, 100), 2)
+local targetNearestBtn = createButton(combatContainer, "Target Nearest: OFF", Color3.fromRGB(130, 225, 255), 2)
 
--- Directional List Selector (Random is Default)
 local FlingDirections = {"Random", "Upward", "Downward"}
 local currentDirIndex = 1
 local flingDirButton = createButton(combatContainer, "OmniFling Priority: Random (Default)", Color3.fromRGB(140, 180, 255), 3)
@@ -330,9 +329,9 @@ searchBox.Position = UDim2.new(0, 8, 0, 0)
 searchBox.BackgroundTransparency = 1
 searchBox.Font = Enum.Font.GothamSemibold
 searchBox.PlaceholderText = "Search target by name..."
-searchBox.PlaceholderColor3 = Color3.fromRGB(120, 130, 150)
+searchBox.PlaceholderColor3 = Color3.fromRGB(110, 160, 190)
 searchBox.Text = ""
-searchBox.TextColor3 = Color3.fromRGB(220, 225, 235)
+searchBox.TextColor3 = Color3.fromRGB(180, 235, 255)
 searchBox.TextSize = 13
 searchBox.TextXAlignment = Enum.TextXAlignment.Left
 searchBox.ClearTextOnFocus = false
@@ -408,7 +407,7 @@ selectAllBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 55)
 selectAllBtn.BorderSizePixel = 0
 selectAllBtn.Font = Enum.Font.GothamSemibold
 selectAllBtn.Text = "Select All"
-selectAllBtn.TextColor3 = Color3.fromRGB(200, 210, 225)
+selectAllBtn.TextColor3 = Color3.fromRGB(150, 225, 255)
 selectAllBtn.TextSize = 12
 selectAllBtn.Parent = selectToggleContainer
 
@@ -423,7 +422,7 @@ deselectAllBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 55)
 deselectAllBtn.BorderSizePixel = 0
 deselectAllBtn.Font = Enum.Font.GothamSemibold
 deselectAllBtn.Text = "Deselect All"
-deselectAllBtn.TextColor3 = Color3.fromRGB(200, 210, 225)
+deselectAllBtn.TextColor3 = Color3.fromRGB(150, 225, 255)
 deselectAllBtn.TextSize = 12
 deselectAllBtn.Parent = selectToggleContainer
 
@@ -432,13 +431,13 @@ daCorner.CornerRadius = UDim.new(0, 4)
 daCorner.Parent = deselectAllBtn
 
 -- Player Tab buttons
-local hoverButton = createButton(playerContainer, "30 Studs Ground Hover: OFF", Color3.fromRGB(235, 220, 150), 1)
-local flyButton = createButton(playerContainer, "Fly Mode: OFF", Color3.fromRGB(150, 255, 220), 2)
-local swimButton = createButton(playerContainer, "Swim Mode: OFF", Color3.fromRGB(100, 200, 255), 3)
-local noclipButton = createButton(playerContainer, "Noclip: OFF", Color3.fromRGB(255, 160, 220), 4)
-local infJumpButton = createButton(playerContainer, "Infinite Jump: OFF", Color3.fromRGB(100, 255, 200), 5)
-local joystickButton = createButton(playerContainer, "On-Screen Joystick: OFF", Color3.fromRGB(255, 200, 120), 6)
-local cameraZoomButton = createButton(playerContainer, "Force 3rd/1st Person Camera (MaxZoom: 999): OFF", Color3.fromRGB(200, 160, 255), 7)
+local hoverButton = createButton(playerContainer, "30 Studs Ground Hover: OFF", Color3.fromRGB(140, 230, 255), 1)
+local flyButton = createButton(playerContainer, "Fly Mode: OFF", Color3.fromRGB(100, 255, 230), 2)
+local swimButton = createButton(playerContainer, "Swim Mode: OFF", Color3.fromRGB(120, 210, 255), 3)
+local noclipButton = createButton(playerContainer, "Noclip: OFF", Color3.fromRGB(180, 200, 255), 4)
+local infJumpButton = createButton(playerContainer, "Infinite Jump: OFF", Color3.fromRGB(110, 255, 210), 5)
+local joystickButton = createButton(playerContainer, "On-Screen Joystick: OFF", Color3.fromRGB(150, 235, 255), 6)
+local cameraZoomButton = createButton(playerContainer, "Force 3rd/1st Person Camera (MaxZoom: 999): OFF", Color3.fromRGB(190, 190, 255), 7)
 
 local speedContainer = Instance.new("Frame")
 speedContainer.Size = UDim2.new(1, 0, 0, 40)
@@ -458,7 +457,7 @@ speedLabel.Position = UDim2.new(0, 12, 0, 0)
 speedLabel.BackgroundTransparency = 1
 speedLabel.Font = Enum.Font.GothamSemibold
 speedLabel.Text = "Fly Speed Amount:"
-speedLabel.TextColor3 = Color3.fromRGB(200, 210, 225)
+speedLabel.TextColor3 = Color3.fromRGB(160, 225, 255)
 speedLabel.TextSize = 13
 speedLabel.TextXAlignment = Enum.TextXAlignment.Left
 speedLabel.Parent = speedContainer
@@ -470,7 +469,7 @@ speedBox.BackgroundColor3 = Color3.fromRGB(18, 22, 29)
 speedBox.BorderSizePixel = 0
 speedBox.Font = Enum.Font.GothamBold
 speedBox.Text = "50"
-speedBox.TextColor3 = Color3.fromRGB(150, 255, 220)
+speedBox.TextColor3 = Color3.fromRGB(110, 255, 230)
 speedBox.TextSize = 14
 speedBox.ClearTextOnFocus = false
 speedBox.Parent = speedContainer
@@ -497,7 +496,7 @@ jBaseCorner.Parent = joystickFrame
 
 local jBaseStroke = Instance.new("UIStroke")
 jBaseStroke.Thickness = 2
-jBaseStroke.Color = Color3.fromRGB(100, 180, 255)
+jBaseStroke.Color = Color3.fromRGB(100, 220, 255)
 jBaseStroke.Transparency = 0.5
 jBaseStroke.Parent = joystickFrame
 
@@ -505,7 +504,7 @@ local joystickThumb = Instance.new("Frame")
 joystickThumb.Name = "CustomJoystickThumb"
 joystickThumb.Size = UDim2.new(0, 50, 0, 50)
 joystickThumb.Position = UDim2.new(0.5, -25, 0.5, -25)
-joystickThumb.BackgroundColor3 = Color3.fromRGB(100, 180, 255)
+joystickThumb.BackgroundColor3 = Color3.fromRGB(100, 220, 255)
 joystickThumb.BackgroundTransparency = 0.2
 joystickThumb.BorderSizePixel = 0
 joystickThumb.ZIndex = 21
@@ -524,15 +523,15 @@ local function switchTab(activeTab, activeBtn)
     playerContainer.Visible = false
     
     espTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
-    espTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    espTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     combatTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
-    combatTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    combatTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
-    playerTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    playerTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     
     activeTab.Visible = true
-    activeBtn.BackgroundColor3 = Color3.fromRGB(50, 70, 100)
-    activeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    activeBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
+    activeBtn.TextColor3 = Color3.fromRGB(200, 245, 255)
 end
 
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
@@ -566,12 +565,11 @@ local cameraZoomConnection
 local pausedScreenConnection
 local noTextureConnection
 
--- Cached constants for performance
 local VECTOR_UP_3_8 = Vector3.new(0, 3.8, 0)
 local VECTOR_UP_6 = Vector3.new(0, 6, 0)
 local VECTOR_DOWN_3_5 = Vector3.new(0, -3.5, 0)
-local COLOR_PLAYER_DEFAULT = Color3.fromRGB(0, 170, 255)
-local COLOR_NPC_DEFAULT = Color3.fromRGB(255, 0, 255)
+local COLOR_PLAYER_DEFAULT = Color3.fromRGB(0, 200, 255)
+local COLOR_NPC_DEFAULT = Color3.fromRGB(150, 160, 255)
 
 local originalLighting = {
     Brightness = Lighting.Brightness,
@@ -622,7 +620,7 @@ local function createESPForModel(model)
 
     local stroke = Instance.new("UIStroke")
     stroke.Thickness = 1.5
-    stroke.Color = Color3.fromRGB(255, 255, 255)
+    stroke.Color = Color3.fromRGB(160, 230, 255)
     stroke.Parent = box
 
     local nameLabel = Instance.new("TextLabel")
@@ -631,7 +629,7 @@ local function createESPForModel(model)
     nameLabel.Position = UDim2.new(-0.5, 0, 0, -20)
     nameLabel.Font = Enum.Font.GothamBold
     nameLabel.TextSize = 12
-    nameLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    nameLabel.TextColor3 = Color3.fromRGB(180, 235, 255)
     nameLabel.TextStrokeTransparency = 0.5
     nameLabel.TextXAlignment = Enum.TextXAlignment.Center
     nameLabel.Parent = box
@@ -647,7 +645,7 @@ local function createESPForModel(model)
     local healthBarFill = Instance.new("Frame")
     healthBarFill.Size = UDim2.new(1, 0, 1, 0)
     healthBarFill.Position = UDim2.new(0, 0, 0, 0)
-    healthBarFill.BackgroundColor3 = Color3.fromRGB(0, 255, 0)
+    healthBarFill.BackgroundColor3 = Color3.fromRGB(80, 255, 200)
     healthBarFill.BorderSizePixel = 0
     healthBarFill.Parent = healthBarBg
 
@@ -664,7 +662,7 @@ local function createESPForModel(model)
     highlightInfoLabel.BackgroundTransparency = 1
     highlightInfoLabel.Font = Enum.Font.GothamBold
     highlightInfoLabel.TextSize = 13
-    highlightInfoLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+    highlightInfoLabel.TextColor3 = Color3.fromRGB(180, 240, 255)
     highlightInfoLabel.TextStrokeTransparency = 0.5
     highlightInfoLabel.TextXAlignment = Enum.TextXAlignment.Center
     highlightInfoLabel.Parent = highlightBillboard
@@ -672,9 +670,9 @@ local function createESPForModel(model)
     local highlight = Instance.new("Highlight")
     highlight.Name = "UniversalHighlightESP"
     highlight.Adornee = model
-    highlight.FillColor = Color3.fromRGB(255, 80, 80)
+    highlight.FillColor = Color3.fromRGB(80, 180, 255)
     highlight.FillTransparency = 0.5
-    highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+    highlight.OutlineColor = Color3.fromRGB(200, 245, 255)
     highlight.OutlineTransparency = 0
     highlight.Enabled = false
     highlight.Parent = model
@@ -803,7 +801,6 @@ RunService.RenderStepped:Connect(function()
     end
 end)
 
--- STRICT SELECTION-BASED DIRECTIONAL OMNIFLING LOGIC
 local SelectedTargets = {}
 local TargetCheckboxes = {}
 local FlingActive = false
@@ -910,7 +907,7 @@ local function RefreshTargetList()
             checkmark.Size = UDim2.new(1, 0, 1, 0)
             checkmark.BackgroundTransparency = 1
             checkmark.Text = "✓"
-            checkmark.TextColor3 = Color3.fromRGB(100, 255, 150)
+            checkmark.TextColor3 = Color3.fromRGB(100, 255, 200)
             checkmark.TextSize = 14
             checkmark.Font = Enum.Font.GothamBold
             checkmark.Visible = SelectedTargets[targetKey] ~= nil
@@ -922,7 +919,7 @@ local function RefreshTargetList()
             nameLab.Position = UDim2.new(0, 30, 0, 0)
             nameLab.BackgroundTransparency = 1
             nameLab.Text = targetData.Name .. distText
-            nameLab.TextColor3 = Color3.fromRGB(220, 225, 235)
+            nameLab.TextColor3 = Color3.fromRGB(180, 235, 255)
             nameLab.TextSize = 12
             nameLab.Font = Enum.Font.GothamSemibold
             nameLab.TextXAlignment = Enum.TextXAlignment.Left
@@ -962,7 +959,7 @@ searchBox:GetPropertyChangedSignal("Text"):Connect(RefreshTargetList)
 targetNearestBtn.MouseButton1Click:Connect(function()
     targetNearestEnabled = not targetNearestEnabled
     targetNearestBtn.Text = targetNearestEnabled and "Target Nearest: ON" or "Target Nearest: OFF"
-    targetNearestBtn.BackgroundColor3 = targetNearestEnabled and Color3.fromRGB(85, 65, 25) or Color3.fromRGB(28, 35, 45)
+    targetNearestBtn.BackgroundColor3 = targetNearestEnabled and Color3.fromRGB(25, 75, 95) or Color3.fromRGB(28, 35, 45)
     RefreshTargetList()
     UpdateFlingStatus()
 end)
@@ -1019,7 +1016,6 @@ local function SkidSelectionAxisFlingModel(TargetData)
             local velocityTarget = Vector3.new()
             local cframeOffset = Vector3.new()
 
-            -- Default horizontal stagger magnitude
             local staggerScale = 2.5
             local staggerX = (math.random() > 0.5 and 1 or -1) * (math.random(10, 30) / 10) * staggerScale
             local staggerZ = (math.random() > 0.5 and 1 or -1) * (math.random(10, 30) / 10) * staggerScale
@@ -1418,13 +1414,25 @@ local function stopCameraZoom()
     LocalPlayer.CameraMode = originalCameraSettings.CameraMode
 end
 
+-- UPDATED CoreGui NetworkPauseNotification Removal Function
 local function startPausedScreenRemoval()
     if pausedScreenConnection then pausedScreenConnection:Disconnect() end
     pausedScreenConnection = RunService.Heartbeat:Connect(function()
         pcall(function()
-            local pauseNotification = CoreGui:FindFirstChild("RobloxNetworkPauseNotification")
-            if pauseNotification then
-                pauseNotification:Destroy()
+            local robloxGui = CoreGui:FindFirstChild("RobloxGui")
+            if robloxGui then
+                local modules = robloxGui:FindFirstChild("Modules")
+                if modules then
+                    local pauseNotification = modules:FindFirstChild("NetworkPauseNotification")
+                    if pauseNotification then
+                        pauseNotification:Destroy()
+                    end
+                end
+            end
+            -- Fallback direct check
+            local directPause = CoreGui:FindFirstChild("RobloxNetworkPauseNotification")
+            if directPause then
+                directPause:Destroy()
             end
         end)
     end)
@@ -1553,9 +1561,9 @@ local minimizedSize = UDim2.new(0, 600, 0, 35)
 minimizeButton.MouseButton1Click:Connect(function()
     isMinimized = not isMinimized
     categoryBar.Visible = not isMinimized
-    espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
-    combatContainer.Visible = not isMinimized and (combatTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
-    playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
+    espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    combatContainer.Visible = not isMinimized and (combatTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
     mainWindow.Size = isMinimized and minimizedSize or normalSize
     minimizeButton.Text = isMinimized and "+" or "-"
 end)
@@ -1580,13 +1588,13 @@ end)
 humEspButton.MouseButton1Click:Connect(function()
     humEspEnabled = not humEspEnabled
     humEspButton.Text = humEspEnabled and "Humanoid Box ESP (Box + Health): ON" or "Humanoid Box ESP (Box + Health): OFF"
-    humEspButton.BackgroundColor3 = humEspEnabled and Color3.fromRGB(25, 65, 75) or Color3.fromRGB(28, 35, 45)
+    humEspButton.BackgroundColor3 = humEspEnabled and Color3.fromRGB(25, 75, 95) or Color3.fromRGB(28, 35, 45)
 end)
 
 highlightEspButton.MouseButton1Click:Connect(function()
     highlightEspEnabled = not highlightEspEnabled
     highlightEspButton.Text = highlightEspEnabled and "Humanoid Highlight ESP: ON" or "Humanoid Highlight ESP: OFF"
-    highlightEspButton.BackgroundColor3 = highlightEspEnabled and Color3.fromRGB(75, 45, 25) or Color3.fromRGB(28, 35, 45)
+    highlightEspButton.BackgroundColor3 = highlightEspEnabled and Color3.fromRGB(35, 70, 110) or Color3.fromRGB(28, 35, 45)
 end)
 
 pausedScreenButton.MouseButton1Click:Connect(function()
@@ -1609,18 +1617,18 @@ noTextureButton.MouseButton1Click:Connect(function()
 
         if noTextureClickStep == 1 then
             noTextureButton.Text = "Are you sure?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(75, 55, 20)
+            noTextureButton.BackgroundColor3 = Color3.fromRGB(25, 65, 95)
         elseif noTextureClickStep == 2 then
             noTextureButton.Text = "Are you REALLY sure?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(100, 55, 20)
+            noTextureButton.BackgroundColor3 = Color3.fromRGB(30, 80, 120)
         elseif noTextureClickStep == 3 then
             noTextureButton.Text = "Are you REALLY REALLY SURE?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(140, 45, 20)
+            noTextureButton.BackgroundColor3 = Color3.fromRGB(35, 100, 150)
         elseif noTextureClickStep >= 4 then
             noTextureEnabled = true
             noTextureClickStep = 0
             noTextureButton.Text = "No Texture: ON"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(75, 65, 20)
+            noTextureButton.BackgroundColor3 = Color3.fromRGB(25, 75, 110)
             startNoTexture()
             return
         end
@@ -1633,9 +1641,9 @@ noTextureButton.MouseButton1Click:Connect(function()
                     if noTextureClickStep ~= currentStepToken or noTextureEnabled then break end
                     noTextureButton.TextTransparency = i / 10
                     noTextureButton.TextColor3 = Color3.fromRGB(
-                        math.floor(255 * (1 - (i/10 * 0.5))),
-                        math.floor(220 * (1 - (i/10 * 0.5))),
-                        math.floor(100 * (1 - (i/10 * 0.5)))
+                        math.floor(180 * (1 - (i/10 * 0.5))),
+                        math.floor(210 * (1 - (i/10 * 0.5))),
+                        math.floor(255 * (1 - (i/10 * 0.5)))
                     )
                     task.wait(0.04)
                 end
@@ -1645,7 +1653,7 @@ noTextureButton.MouseButton1Click:Connect(function()
                     noTextureButton.Text = "No Texture: OFF"
                     noTextureButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
                     noTextureButton.TextTransparency = 0
-                    noTextureButton.TextColor3 = Color3.fromRGB(255, 220, 100)
+                    noTextureButton.TextColor3 = Color3.fromRGB(180, 210, 255)
                 end
             end
         end)
@@ -1662,14 +1670,14 @@ end)
 fullBrightButton.MouseButton1Click:Connect(function()
     fullBrightEnabled = not fullBrightEnabled
     fullBrightButton.Text = fullBrightEnabled and "Full Bright: ON" or "Full Bright: OFF"
-    fullBrightButton.BackgroundColor3 = fullBrightEnabled and Color3.fromRGB(85, 85, 30) or Color3.fromRGB(28, 35, 45)
+    fullBrightButton.BackgroundColor3 = fullBrightEnabled and Color3.fromRGB(30, 80, 110) or Color3.fromRGB(28, 35, 45)
     if fullBrightEnabled then startFullBright() else stopFullBright() end
 end)
 
 hoverButton.MouseButton1Click:Connect(function()
     hoverEnabled = not hoverEnabled
     hoverButton.Text = hoverEnabled and "30 Studs Ground Hover: ON" or "30 Studs Ground Hover: OFF"
-    hoverButton.BackgroundColor3 = hoverEnabled and Color3.fromRGB(55, 50, 25) or Color3.fromRGB(28, 35, 45)
+    hoverButton.BackgroundColor3 = hoverEnabled and Color3.fromRGB(25, 75, 95) or Color3.fromRGB(28, 35, 45)
 end)
 
 flyButton.MouseButton1Click:Connect(function()
@@ -1689,7 +1697,7 @@ end)
 noclipButton.MouseButton1Click:Connect(function()
     noclipEnabled = not noclipEnabled
     noclipButton.Text = noclipEnabled and "Noclip: ON" or "Noclip: OFF"
-    noclipButton.BackgroundColor3 = noclipEnabled and Color3.fromRGB(65, 25, 50) or Color3.fromRGB(28, 35, 45)
+    noclipButton.BackgroundColor3 = noclipEnabled and Color3.fromRGB(45, 55, 95) or Color3.fromRGB(28, 35, 45)
     if noclipEnabled then startNoclip() else stopNoclip() end
 end)
 
@@ -1703,14 +1711,14 @@ end)
 joystickButton.MouseButton1Click:Connect(function()
     joystickEnabled = not joystickEnabled
     joystickButton.Text = joystickEnabled and "On-Screen Joystick: ON" or "On-Screen Joystick: OFF"
-    joystickButton.BackgroundColor3 = joystickEnabled and Color3.fromRGB(85, 60, 25) or Color3.fromRGB(28, 35, 45)
+    joystickButton.BackgroundColor3 = joystickEnabled and Color3.fromRGB(35, 75, 110) or Color3.fromRGB(28, 35, 45)
     if joystickEnabled then startJoystick() else stopJoystick() end
 end)
 
 cameraZoomButton.MouseButton1Click:Connect(function()
     cameraZoomEnabled = not cameraZoomEnabled
     cameraZoomButton.Text = cameraZoomEnabled and "Force 3rd/1st Person Camera (MaxZoom: 999): ON" or "Force 3rd/1st Person Camera (MaxZoom: 999): OFF"
-    cameraZoomButton.BackgroundColor3 = cameraZoomEnabled and Color3.fromRGB(75, 45, 95) or Color3.fromRGB(28, 35, 45)
+    cameraZoomButton.BackgroundColor3 = cameraZoomEnabled and Color3.fromRGB(45, 65, 115) or Color3.fromRGB(28, 35, 45)
     if cameraZoomEnabled then startCameraZoom() else stopCameraZoom() end
 end)
 
