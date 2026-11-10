@@ -1,0 +1,1100 @@
+-- Target Engine: Roblox Luau (Client Executor / LocalScript)
+-- Requirements: Place in LocalPlayer Scripts or execute via standard executor.
+-- Updated: Removed Auto Loot entirely and replaced it with a fully featured Loot ESP toggle that dynamically tracks and highlights items in both `__ClientLoot` and `Loot` folders.
+
+local Players = game:GetService("Players")
+local UserInputService = game:GetService("UserInputService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local Camera = Workspace.CurrentCamera
+
+local LocalPlayer = Players.LocalPlayer
+local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+
+if PlayerGui:FindFirstChild("RayfieldStyleGui") then
+    PlayerGui.RayfieldStyleGui:Destroy()
+end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "RayfieldStyleGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = PlayerGui
+
+local mainWindow = Instance.new("Frame")
+mainWindow.Name = "MainWindow"
+mainWindow.Size = UDim2.new(0, 600, 0, 680)
+mainWindow.Position = UDim2.new(0.5, -300, 0, 20)
+mainWindow.BackgroundColor3 = Color3.fromRGB(18, 20, 26)
+mainWindow.BackgroundTransparency = 0.4
+mainWindow.BorderSizePixel = 0
+mainWindow.Parent = screenGui
+
+local mainCorner = Instance.new("UICorner")
+mainCorner.CornerRadius = UDim.new(0, 6)
+mainCorner.Parent = mainWindow
+
+local topBar = Instance.new("Frame")
+topBar.Name = "TopBar"
+topBar.Size = UDim2.new(1, 0, 0, 35)
+topBar.BackgroundColor3 = Color3.fromRGB(24, 27, 36)
+topBar.BackgroundTransparency = 0.3
+topBar.BorderSizePixel = 0
+topBar.Parent = mainWindow
+
+local topCorner = Instance.new("UICorner")
+topCorner.CornerRadius = UDim.new(0, 6)
+topCorner.Parent = topBar
+
+local titleLabel = Instance.new("TextLabel")
+titleLabel.Size = UDim2.new(1, -100, 1, 0)
+titleLabel.Position = UDim2.new(0, 15, 0, 0)
+titleLabel.BackgroundTransparency = 1
+titleLabel.Font = Enum.Font.GothamBold
+titleLabel.Text = "Interface Hub [Loot ESP & 12 Stud Orbit Kill Tabs]"
+titleLabel.TextColor3 = Color3.fromRGB(180, 190, 210)
+titleLabel.TextSize = 14
+titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+titleLabel.Parent = topBar
+
+local buttonHolder = Instance.new("Frame")
+buttonHolder.Size = UDim2.new(0, 70, 1, 0)
+buttonHolder.Position = UDim2.new(1, -75, 0, 0)
+buttonHolder.BackgroundTransparency = 1
+buttonHolder.Parent = topBar
+
+local minimizeButton = Instance.new("TextButton")
+minimizeButton.Size = UDim2.new(0, 30, 1, 0)
+minimizeButton.Position = UDim2.new(0, 0, 0, 0)
+minimizeButton.BackgroundTransparency = 1
+minimizeButton.Font = Enum.Font.GothamBold
+minimizeButton.Text = "-"
+minimizeButton.TextColor3 = Color3.fromRGB(160, 170, 190)
+minimizeButton.TextSize = 16
+minimizeButton.Parent = buttonHolder
+
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 1, 0)
+closeButton.Position = UDim2.new(0, 35, 0, 0)
+closeButton.BackgroundTransparency = 1
+closeButton.Font = Enum.Font.GothamBold
+closeButton.Text = "×"
+closeButton.TextColor3 = Color3.fromRGB(220, 100, 100)
+closeButton.TextSize = 18
+closeButton.Parent = buttonHolder
+
+local categoryBar = Instance.new("Frame")
+categoryBar.Name = "CategoryBar"
+categoryBar.Size = UDim2.new(1, -20, 0, 35)
+categoryBar.Position = UDim2.new(0, 10, 0, 42)
+categoryBar.BackgroundColor3 = Color3.fromRGB(22, 25, 32)
+categoryBar.BackgroundTransparency = 0.3
+categoryBar.BorderSizePixel = 0
+categoryBar.Parent = mainWindow
+
+local catCorner = Instance.new("UICorner")
+catCorner.CornerRadius = UDim.new(0, 4)
+catCorner.Parent = categoryBar
+
+local catLayout = Instance.new("UIListLayout")
+catLayout.FillDirection = Enum.FillDirection.Horizontal
+catLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+catLayout.SortOrder = Enum.SortOrder.LayoutOrder
+catLayout.Padding = UDim.new(0, 5)
+catLayout.Parent = categoryBar
+
+local function createTabButton(name, order)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(0.31, 0, 1, 0)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+    btn.BackgroundTransparency = 0.5
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamBold
+    btn.Text = name
+    btn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    btn.TextSize = 13
+    btn.LayoutOrder = order
+    btn.Parent = categoryBar
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = btn
+    return btn
+end
+
+local espTabBtn = createTabButton("ESP", 1)
+local farmTabBtn = createTabButton("Farm", 2)
+local playerTabBtn = createTabButton("Player", 3)
+
+local function createTabContainer(name)
+    local frame = Instance.new("ScrollingFrame")
+    frame.Name = name
+    frame.Size = UDim2.new(1, -20, 1, -95)
+    frame.Position = UDim2.new(0, 10, 0, 85)
+    frame.BackgroundTransparency = 1
+    frame.BorderSizePixel = 0
+    frame.CanvasSize = UDim2.new(0, 0, 0, 680)
+    frame.ScrollBarThickness = 4
+    frame.Visible = false
+    frame.Parent = mainWindow
+
+    local layout = Instance.new("UIListLayout")
+    layout.SortOrder = Enum.SortOrder.LayoutOrder
+    layout.Padding = UDim.new(0, 10)
+    layout.Parent = frame
+
+    return frame
+end
+
+local espContainer = createTabContainer("ESPContainer")
+local farmContainer = createTabContainer("FarmContainer")
+local playerContainer = createTabContainer("PlayerContainer")
+
+espContainer.Visible = true
+espTabBtn.BackgroundColor3 = Color3.fromRGB(50, 70, 100)
+espTabBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+
+local warningOverlay = Instance.new("Frame")
+warningOverlay.Size = UDim2.new(1, 0, 1, 0)
+warningOverlay.BackgroundColor3 = Color3.fromRGB(15, 17, 22)
+warningOverlay.BackgroundTransparency = 0.15
+warningOverlay.Visible = false
+warningOverlay.ZIndex = 10
+warningOverlay.Parent = mainWindow
+
+local warningCorner = Instance.new("UICorner")
+warningCorner.CornerRadius = UDim.new(0, 6)
+warningCorner.Parent = warningOverlay
+
+local warningText = Instance.new("TextLabel")
+warningText.Size = UDim2.new(1, -40, 0, 60)
+warningText.Position = UDim2.new(0, 20, 0.3, 0)
+warningText.BackgroundTransparency = 1
+warningText.Font = Enum.Font.GothamBold
+warningText.Text = "Are you sure you want to close the Hub? All active ESP tags and status features will be removed."
+warningText.TextColor3 = Color3.fromRGB(220, 220, 230)
+warningText.TextSize = 14
+warningText.TextWrapped = true
+warningText.ZIndex = 11
+warningText.Parent = warningOverlay
+
+local confirmCloseBtn = Instance.new("TextButton")
+confirmCloseBtn.Size = UDim2.new(0.45, 0, 0, 35)
+confirmCloseBtn.Position = UDim2.new(0.05, 0, 0.65, 0)
+confirmCloseBtn.BackgroundColor3 = Color3.fromRGB(180, 50, 50)
+confirmCloseBtn.Font = Enum.Font.GothamBold
+confirmCloseBtn.Text = "Yes, Close"
+confirmCloseBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+confirmCloseBtn.TextSize = 13
+confirmCloseBtn.ZIndex = 11
+confirmCloseBtn.Parent = warningOverlay
+
+local confirmCorner = Instance.new("UICorner")
+confirmCorner.CornerRadius = UDim.new(0, 4)
+confirmCorner.Parent = confirmCloseBtn
+
+local cancelCloseBtn = Instance.new("TextButton")
+cancelCloseBtn.Size = UDim2.new(0.45, 0, 0, 35)
+cancelCloseBtn.Position = UDim2.new(0.52, 0, 0.65, 0)
+cancelCloseBtn.BackgroundColor3 = Color3.fromRGB(40, 45, 55)
+cancelCloseBtn.Font = Enum.Font.GothamBold
+cancelCloseBtn.Text = "Cancel"
+cancelCloseBtn.TextColor3 = Color3.fromRGB(200, 200, 210)
+cancelCloseBtn.TextSize = 13
+cancelCloseBtn.ZIndex = 11
+cancelCloseBtn.Parent = warningOverlay
+
+local cancelCorner = Instance.new("UICorner")
+cancelCorner.CornerRadius = UDim.new(0, 4)
+cancelCorner.Parent = cancelCloseBtn
+
+local function createButton(parent, text, color, order)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
+    btn.BackgroundTransparency = 0.3
+    btn.BorderSizePixel = 0
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextColor3 = color
+    btn.TextSize = 14
+    btn.Text = text
+    btn.LayoutOrder = order
+    btn.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = btn
+    return btn
+end
+
+local goldenButton = createButton(espContainer, "Golden Flower ESP: OFF", Color3.fromRGB(235, 205, 130), 1)
+local flowerButton = createButton(espContainer, "Flower ESP: OFF", Color3.fromRGB(255, 180, 220), 2)
+local enemyButton = createButton(espContainer, "Enemy ESP: OFF", Color3.fromRGB(200, 160, 235), 3)
+local shrineButton = createButton(espContainer, "Sunken Shrine ESP: OFF", Color3.fromRGB(100, 210, 255), 4)
+local chestButton = createButton(espContainer, "Chest ESP: OFF", Color3.fromRGB(150, 235, 185), 5)
+local veinsButton = createButton(espContainer, "Veins ESP: OFF", Color3.fromRGB(235, 120, 120), 6)
+local lootEspButton = createButton(espContainer, "Loot ESP: OFF", Color3.fromRGB(100, 255, 220), 7)
+local loopRefreshButton = createButton(espContainer, "Loop ESP Refresh: OFF", Color3.fromRGB(120, 255, 200), 8)
+loopRefreshButton.BackgroundColor3 = Color3.fromRGB(25, 45, 38)
+
+-- Farm Tab Buttons
+local aiButton = createButton(farmContainer, "Auto Kill: OFF", Color3.fromRGB(235, 150, 180), 1)
+local toggleListBtn = createButton(farmContainer, "Target Selection List: [CLOSED]", Color3.fromRGB(180, 215, 255), 2)
+toggleListBtn.BackgroundColor3 = Color3.fromRGB(35, 45, 60)
+
+local targetDropdownFrame = Instance.new("ScrollingFrame")
+targetDropdownFrame.Name = "TargetDropdown"
+targetDropdownFrame.Size = UDim2.new(1, 0, 0, 180)
+targetDropdownFrame.BackgroundColor3 = Color3.fromRGB(14, 16, 21)
+targetDropdownFrame.BackgroundTransparency = 0.3
+targetDropdownFrame.BorderSizePixel = 0
+targetDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+targetDropdownFrame.ScrollBarThickness = 4
+targetDropdownFrame.Visible = false
+targetDropdownFrame.LayoutOrder = 3
+targetDropdownFrame.Parent = farmContainer
+
+local dropdownLayout = Instance.new("UIListLayout")
+dropdownLayout.SortOrder = Enum.SortOrder.LayoutOrder
+dropdownLayout.Padding = UDim.new(0, 5)
+dropdownLayout.Parent = targetDropdownFrame
+
+local dropdownCorner = Instance.new("UICorner")
+dropdownCorner.CornerRadius = UDim.new(0, 4)
+dropdownCorner.Parent = targetDropdownFrame
+
+-- Player Tab Buttons
+local hoverButton = createButton(playerContainer, "30 Studs Ground Hover: OFF", Color3.fromRGB(235, 220, 150), 1)
+local flyButton = createButton(playerContainer, "Fly Mode: OFF", Color3.fromRGB(150, 255, 220), 2)
+local swimButton = createButton(playerContainer, "Swim Mode: OFF", Color3.fromRGB(100, 200, 255), 3)
+local noclipButton = createButton(playerContainer, "Noclip: OFF", Color3.fromRGB(255, 160, 220), 4)
+
+local speedContainer = Instance.new("Frame")
+speedContainer.Size = UDim2.new(1, 0, 0, 40)
+speedContainer.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
+speedContainer.BackgroundTransparency = 0.3
+speedContainer.BorderSizePixel = 0
+speedContainer.LayoutOrder = 5
+speedContainer.Parent = playerContainer
+
+local speedCorner = Instance.new("UICorner")
+speedCorner.CornerRadius = UDim.new(0, 4)
+speedCorner.Parent = speedContainer
+
+local speedLabel = Instance.new("TextLabel")
+speedLabel.Size = UDim2.new(0.6, 0, 1, 0)
+speedLabel.Position = UDim2.new(0, 12, 0, 0)
+speedLabel.BackgroundTransparency = 1
+speedLabel.Font = Enum.Font.GothamSemibold
+speedLabel.Text = "Fly Speed Amount:"
+speedLabel.TextColor3 = Color3.fromRGB(200, 210, 225)
+speedLabel.TextSize = 13
+speedLabel.TextXAlignment = Enum.TextXAlignment.Left
+speedLabel.Parent = speedContainer
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(0, 100, 0, 28)
+speedBox.Position = UDim2.new(1, -110, 0.5, -14)
+speedBox.BackgroundColor3 = Color3.fromRGB(18, 22, 29)
+speedBox.BorderSizePixel = 0
+speedBox.Font = Enum.Font.GothamBold
+speedBox.Text = "300"
+speedBox.TextColor3 = Color3.fromRGB(150, 255, 220)
+speedBox.TextSize = 14
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = speedContainer
+
+local boxCorner2 = Instance.new("UICorner")
+boxCorner2.CornerRadius = UDim.new(0, 4)
+boxCorner2.Parent = speedBox
+
+local function switchTab(activeTab, activeBtn)
+    espContainer.Visible = false
+    farmContainer.Visible = false
+    playerContainer.Visible = false
+    
+    espTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+    espTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    farmTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+    farmTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    playerTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+    playerTabBtn.TextColor3 = Color3.fromRGB(170, 180, 200)
+    
+    activeTab.Visible = true
+    activeBtn.BackgroundColor3 = Color3.fromRGB(50, 70, 100)
+    activeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+end
+
+espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
+farmTabBtn.MouseButton1Click:Connect(function() switchTab(farmContainer, farmTabBtn) end)
+playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
+
+local activeTags = {}
+local goldenEnabled = false
+local flowerEnabled = false
+local enemyEnabled = false
+local shrineEnabled = false
+local chestEnabled = false
+local veinsEnabled = false
+local lootEspEnabled = false
+local loopRefreshEnabled = false
+local autoKillEnabled = false
+local hoverEnabled = false
+local flyEnabled = false
+local swimEnabled = false
+local noclipEnabled = false
+local listOpen = false
+
+local selectedTargetName = "ALL"
+
+local akSpeed = 300
+local akHorizontalOffset = -3.0
+local akDepthOffset = -3.0
+local ESP_MAX_DISTANCE = 2000
+
+local frameAccumulator = 0
+local refreshAccumulator = 0
+local attackCooldown = 0
+local cachedEnemies = {}
+local flySpeed = 300
+
+local swapTimer = 0
+local activeAutoKillMode = 1
+local orbitAngle = 0
+
+local bossTargetNames = {
+    ["Vatranao"] = true,
+    ["Cryost"] = true,
+    ["Khalorn"] = true,
+    ["The Firstborn Wyrm"] = true,
+    ["Threonolith"] = true,
+    ["Acedia"] = true,
+    ["EldritchAcedia"] = true,
+}
+
+local bg, bv
+local flyConnection
+local swimConnection
+local noclipConnection
+
+speedBox.FocusLost:Connect(function()
+    local val = tonumber(speedBox.Text)
+    if val then 
+        flySpeed = val 
+        akSpeed = val 
+    else 
+        speedBox.Text = tostring(flySpeed) 
+    end
+end)
+
+local function teleportToPortalOrRunWorld(rootPart)
+    local portal = Workspace:FindFirstChild("Portal")
+    local targetPart = nil
+
+    if portal then
+        if portal:IsA("Model") then
+            targetPart = portal.PrimaryPart or portal:FindFirstChildWhichIsA("BasePart")
+        elseif portal:IsA("BasePart") then
+            targetPart = portal
+        end
+    end
+
+    if not targetPart then
+        local runWorld = Workspace:FindFirstChild("RunWorld")
+        if runWorld then
+            if runWorld:IsA("Model") then
+                targetPart = runWorld.PrimaryPart or runWorld:FindFirstChildWhichIsA("BasePart")
+            elseif runWorld:IsA("BasePart") then
+                targetPart = runWorld
+            end
+        end
+    end
+
+    if targetPart then
+        local pos = targetPart:IsA("Model") and targetPart:GetPivot().Position or targetPart.Position
+        rootPart.CFrame = CFrame.new(pos + Vector3.new(0, 5, 0))
+        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+    end
+end
+
+local function startFly()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if not root or not hum then return end
+    
+    hum.PlatformStand = true
+    if bg then bg:Destroy() end
+    if bv then bv:Destroy() end
+    
+    bg = Instance.new("BodyGyro", root)
+    bg.P = 9e4
+    bg.maxTorque = Vector3.new(9e4, 9e4, 9e4)
+    bg.cframe = root.CFrame
+    
+    bv = Instance.new("BodyVelocity", root)
+    bv.Velocity = Vector3.new(0, 0, 0)
+    bv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+
+    if flyConnection then flyConnection:Disconnect() end
+    
+    flyConnection = RunService.RenderStepped:Connect(function()
+        local currentCharacter = LocalPlayer.Character
+        local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
+        local currentHum = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
+        
+        if not currentCharacter or not currentRoot or not bv or not bg then return end
+
+        bg.cframe = Camera.CFrame
+        local moveDir = Vector3.new()
+        local moveVector = currentHum and currentHum.MoveDirection or Vector3.new()
+        
+        if moveVector.Magnitude > 0 then
+            local camCF = Camera.CFrame
+            local flatMove = camCF:VectorToObjectSpace(moveVector)
+            moveDir = (camCF.LookVector * -flatMove.Z) + (camCF.RightVector * flatMove.X)
+        end
+
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
+        if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
+
+        if moveDir.Magnitude > 0 then
+            bv.Velocity = moveDir.Unit * flySpeed
+        else
+            bv.Velocity = Vector3.new(0, 0.1, 0)
+        end
+    end)
+end
+
+local function stopFly()
+    if flyConnection then flyConnection:Disconnect() flyConnection = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum and not swimEnabled then hum.PlatformStand = false end
+    if bg then bg:Destroy() bg = nil end
+    if bv then bv:Destroy() bv = nil end
+end
+
+local function startSwim()
+    if swimConnection then swimConnection:Disconnect() end
+    swimConnection = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        if char and hum then
+            hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+            hum:ChangeState(Enum.HumanoidStateType.Swimming)
+        end
+    end)
+end
+
+local function stopSwim()
+    if swimConnection then swimConnection:Disconnect() swimConnection = nil end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+end
+
+local function startNoclip()
+    if noclipConnection then noclipConnection:Disconnect() end
+    noclipConnection = RunService.Stepped:Connect(function()
+        local char = LocalPlayer.Character
+        if char then
+            for _, part in ipairs(char:GetDescendants()) do
+                if part:IsA("BasePart") then part.CanCollide = false end
+            end
+        end
+    end)
+end
+
+local function stopNoclip()
+    if noclipConnection then noclipConnection:Disconnect() noclipConnection = nil end
+    local char = LocalPlayer.Character
+    if char then
+        for _, part in ipairs(char:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = true end
+        end
+    end
+end
+
+local function applyTag(item, fillColor, outlineColor, tagName)
+    if activeTags[item] then return end
+    
+    local hl = Instance.new("Highlight")
+    hl.Name = tagName .. "_HL"
+    hl.Adornee = item
+    hl.FillColor = fillColor
+    hl.FillTransparency = 0.35
+    hl.OutlineColor = outlineColor
+    hl.OutlineTransparency = 0.2
+    hl.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+    hl.Parent = item
+
+    local bill = Instance.new("BillboardGui")
+    bill.Name = tagName .. "_Tag"
+    bill.Adornee = item
+    bill.Size = UDim2.new(0, 100, 0, 40)
+    bill.StudsOffset = Vector3.new(0, 3, 0)
+    bill.AlwaysOnTop = true
+
+    local textLabel = Instance.new("TextLabel")
+    textLabel.Size = UDim2.new(1, 0, 1, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.TextColor3 = fillColor
+    textLabel.TextStrokeTransparency = 0.4
+    textLabel.TextSize = 13
+    textLabel.Text = item.Name
+    textLabel.Parent = bill
+
+    bill.Parent = item
+    activeTags[item] = {Highlight = hl, Billboard = bill}
+end
+
+local function removeTag(item)
+    if activeTags[item] then
+        local data = activeTags[item]
+        if data.Highlight then data.Highlight:Destroy() end
+        if data.Billboard then data.Billboard:Destroy() end
+        activeTags[item] = nil
+    end
+end
+
+local function populateTargetList()
+    for _, child in ipairs(targetDropdownFrame:GetChildren()) do
+        if child:IsA("TextButton") then child:Destroy() end
+    end
+
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    
+    local allBtn = Instance.new("TextButton")
+    allBtn.Size = UDim2.new(1, 0, 0, 30)
+    allBtn.BackgroundColor3 = (selectedTargetName == "ALL") and Color3.fromRGB(50, 60, 80) or Color3.fromRGB(22, 25, 32)
+    allBtn.BorderSizePixel = 0
+    allBtn.Font = Enum.Font.GothamBold
+    allBtn.TextColor3 = (selectedTargetName == "ALL") and Color3.fromRGB(255, 220, 100) or Color3.fromRGB(180, 190, 205)
+    allBtn.TextSize = 13
+    allBtn.Text = "Target: [ALL / Closest Priority]"
+    allBtn.Parent = targetDropdownFrame
+
+    allBtn.MouseButton1Click:Connect(function()
+        selectedTargetName = "ALL"
+        populateTargetList()
+    end)
+
+    if not npcsFolder then 
+        targetDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, dropdownLayout.AbsoluteContentSize.Y)
+        return 
+    end
+
+    local uniqueNames = {}
+    for _, enemy in ipairs(npcsFolder:GetChildren()) do
+        if not uniqueNames[enemy.Name] then
+            uniqueNames[enemy.Name] = true
+            
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, 0, 0, 30)
+            btn.BackgroundColor3 = (selectedTargetName == enemy.Name) and Color3.fromRGB(50, 60, 80) or Color3.fromRGB(22, 25, 32)
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.GothamSemibold
+            btn.TextColor3 = (selectedTargetName == enemy.Name) and Color3.fromRGB(255, 220, 100) or Color3.fromRGB(180, 190, 205)
+            btn.TextSize = 13
+            btn.Text = "Target: " .. enemy.Name
+            btn.Parent = targetDropdownFrame
+
+            btn.MouseButton1Click:Connect(function()
+                selectedTargetName = enemy.Name
+                populateTargetList()
+            end)
+        end
+    end
+
+    targetDropdownFrame.CanvasSize = UDim2.new(0, 0, 0, dropdownLayout.AbsoluteContentSize.Y + 10)
+end
+
+local function getRootPosition()
+    local char = LocalPlayer.Character
+    local root = char and char:FindFirstChild("HumanoidRootPart")
+    return root and root.Position or nil
+end
+
+local function isInRange(itemPart)
+    local rootPos = getRootPosition()
+    if not rootPos then return false end
+    local targetPos = itemPart:IsA("Model") and (itemPart.PrimaryPart and itemPart.PrimaryPart.Position or itemPart:GetPivot().Position) or (itemPart:IsA("BasePart") and itemPart.Position or nil)
+    if not targetPos then return false end
+    return (rootPos - targetPos).Magnitude <= ESP_MAX_DISTANCE
+end
+
+local function refreshGoldenFlowers()
+    local targetFolder = Workspace:FindFirstChild("RunWorld")
+    local island1 = targetFolder and targetFolder:FindFirstChild("Island1")
+    local flowersFolder = island1 and island1:FindFirstChild("Flowers")
+    if not flowersFolder then return end
+
+    for _, item in ipairs(flowersFolder:GetChildren()) do
+        if item.Name:lower():find("golden") then
+            local primaryPart = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item)
+            if goldenEnabled and primaryPart and isInRange(primaryPart) then 
+                applyTag(item, Color3.fromRGB(230, 185, 95), Color3.fromRGB(250, 225, 170), "GoldenTag") 
+            else 
+                removeTag(item) 
+            end
+        end
+    end
+end
+
+local function refreshFlowers()
+    local targetFolder = Workspace:FindFirstChild("RunWorld")
+    local island1 = targetFolder and targetFolder:FindFirstChild("Island1")
+    local flowersFolder = island1 and island1:FindFirstChild("Flowers")
+    if not flowersFolder then return end
+
+    for _, item in ipairs(flowersFolder:GetChildren()) do
+        if not item.Name:lower():find("golden") then
+            local primaryPart = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item)
+            if flowerEnabled and primaryPart and isInRange(primaryPart) then 
+                applyTag(item, Color3.fromRGB(240, 150, 200), Color3.fromRGB(255, 200, 230), "FlowerTag") 
+            else 
+                removeTag(item) 
+            end
+        end
+    end
+end
+
+local function refreshEnemies()
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    if not npcsFolder then return end
+
+    for _, enemy in ipairs(npcsFolder:GetChildren()) do
+        local primaryPart = enemy:IsA("Model") and (enemy.PrimaryPart or enemy:FindFirstChildWhichIsA("BasePart")) or (enemy:IsA("BasePart") and enemy)
+        if enemyEnabled and primaryPart and isInRange(primaryPart) then 
+            applyTag(enemy, Color3.fromRGB(175, 135, 215), Color3.fromRGB(215, 190, 240), "EnemyTag") 
+        else 
+            removeTag(enemy) 
+        end
+    end
+    populateTargetList()
+end
+
+local function refreshSunkenShrine()
+    local runWorld = Workspace:FindFirstChild("RunWorld")
+    local island1 = runWorld and runWorld:FindFirstChild("Island1")
+    local settlements = island1 and island1:FindFirstChild("Settlements")
+    local shrine = settlements and settlements:FindFirstChild("SunkenShrine")
+
+    if not shrine then return end
+    local primaryPart = shrine:IsA("Model") and (shrine.PrimaryPart or shrine:FindFirstChildWhichIsA("BasePart")) or (shrine:IsA("BasePart") and shrine)
+    if shrineEnabled and primaryPart and isInRange(primaryPart) then 
+        applyTag(shrine, Color3.fromRGB(70, 180, 240), Color3.fromRGB(150, 230, 255), "ShrineTag") 
+    else 
+        removeTag(shrine) 
+    end
+end
+
+local function refreshChests()
+    local runWorld = Workspace:FindFirstChild("RunWorld")
+    if not runWorld then return end
+
+    for item, data in pairs(activeTags) do
+        if data.Highlight and data.Highlight.Name:find("ChestTag") then removeTag(item) end
+    end
+
+    for _, item in ipairs(runWorld:GetDescendants()) do
+        local nameLower = item.Name:lower()
+        if nameLower:find("chest") and not nameLower:find("chest_top") and not nameLower:find("chest_bottom") then
+            local primaryPart = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item)
+            if chestEnabled and primaryPart and isInRange(primaryPart) then 
+                applyTag(item, Color3.fromRGB(130, 220, 170), Color3.fromRGB(190, 245, 210), "ChestTag") 
+            end
+        end
+    end
+end
+
+local function refreshLootESP()
+    for item, data in pairs(activeTags) do
+        if data.Highlight and data.Highlight.Name:find("LootEspTag") then removeTag(item) end
+    end
+    if not lootEspEnabled then return end
+
+    local function scanFolder(folderName)
+        local folder = Workspace:FindFirstChild(folderName)
+        if folder then
+            for _, item in ipairs(folder:GetChildren()) do
+                local primaryPart = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item)
+                if primaryPart and isInRange(primaryPart) then
+                    applyTag(item, Color3.fromRGB(100, 255, 220), Color3.fromRGB(180, 255, 240), "LootEspTag")
+                end
+            end
+        end
+    end
+
+    scanFolder("__ClientLoot")
+    scanFolder("Loot")
+end
+
+local function getOreColor(name)
+    local lower = name:lower()
+    if lower:find("coal") then return Color3.fromRGB(30, 30, 30), Color3.fromRGB(80, 80, 80)
+    elseif lower:find("azurium") or lower:find("azure") then return Color3.fromRGB(30, 120, 255), Color3.fromRGB(100, 180, 255)
+    elseif lower:find("iron") then return Color3.fromRGB(160, 160, 160), Color3.fromRGB(210, 210, 210)
+    elseif lower:find("gold") then return Color3.fromRGB(255, 215, 0), Color3.fromRGB(255, 240, 150)
+    elseif lower:find("copper") then return Color3.fromRGB(184, 115, 51), Color3.fromRGB(222, 140, 75)
+    elseif lower:find("silver") then return Color3.fromRGB(192, 192, 192), Color3.fromRGB(230, 230, 230)
+    elseif lower:find("manacite") then return Color3.fromRGB(157, 143, 239), Color3.fromRGB(198, 189, 252)
+    elseif lower:find("ruby") or lower:find("red") then return Color3.fromRGB(220, 30, 30), Color3.fromRGB(255, 100, 100)
+    elseif lower:find("sapphire") then return Color3.fromRGB(20, 60, 220), Color3.fromRGB(100, 140, 255)
+    elseif lower:find("emerald") or lower:find("green") then return Color3.fromRGB(40, 200, 80), Color3.fromRGB(120, 255, 160)
+    else return Color3.fromRGB(150, 150, 150), Color3.fromRGB(200, 200, 200) end
+end
+
+local function refreshVeins()
+    local runWorld = Workspace:FindFirstChild("RunWorld")
+    for item, data in pairs(activeTags) do
+        if data.Highlight and data.Highlight.Name:find("VeinsTag") then removeTag(item) end
+    end
+    if not veinsEnabled or not runWorld then return end
+
+    for _, item in ipairs(runWorld:GetDescendants()) do
+        if item.ClassName == "BasePart" or item.ClassName == "Model" then
+            local nameLower = item.Name:lower()
+            if not nameLower:find("golden") and not nameLower:find("seamvein") then
+                if not nameLower:match("^ore%d+$") and not nameLower:match("^rock%s*%d+$") and not nameLower:match("^rock%d*$") and not nameLower:find("bedrock") then
+                    if nameLower:find("ore") or nameLower:find("vein") or nameLower:find("rock") or nameLower:find("node") or nameLower:find("coal") or nameLower:find("azurium") or nameLower:find("iron") or nameLower:find("gold") or nameLower:find("copper") or nameLower:find("silver") or nameLower:find("manacite") or nameLower:find("gem") then
+                        local primaryPart = item:IsA("Model") and (item.PrimaryPart or item:FindFirstChildWhichIsA("BasePart")) or (item:IsA("BasePart") and item)
+                        if primaryPart and isInRange(primaryPart) then
+                            applyTag(item, getOreColor(item.Name), select(2, getOreColor(item.Name)), "VeinsTag")
+                        end
+                    end
+                end
+            end
+        end
+    end
+end
+
+local function refreshAllActiveESPs()
+    if goldenEnabled then refreshGoldenFlowers() end
+    if flowerEnabled then refreshFlowers() end
+    if enemyEnabled then refreshEnemies() end
+    if shrineEnabled then refreshSunkenShrine() end
+    if chestEnabled then refreshChests() end
+    if veinsEnabled then refreshVeins() end
+    if lootEspEnabled then refreshLootESP() end
+end
+
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
+RunService.Heartbeat:Connect(function(dt)
+    local character = LocalPlayer.Character
+    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    
+    if not character or not rootPart or not humanoid then return end
+
+    if loopRefreshEnabled then
+        refreshAccumulator = refreshAccumulator + dt
+        if refreshAccumulator >= 1.0 then
+            refreshAccumulator = 0
+            refreshAllActiveESPs()
+        end
+    end
+
+    if lootEspEnabled then
+        refreshLootESP()
+    end
+
+    if hoverEnabled and not flyEnabled then
+        raycastParams.FilterDescendantsInstances = {character}
+        local rayResult = Workspace:Raycast(rootPart.Position + Vector3.new(0, 2, 0), Vector3.new(0, -150, 0), raycastParams)
+        if rayResult then
+            local targetHeight = rayResult.Position.Y + 33.0
+            if rootPart.Position.Y < targetHeight or rootPart.AssemblyLinearVelocity.Y < 1 then
+                rootPart.CFrame = CFrame.new(rootPart.Position.X, targetHeight, rootPart.Position.Z) * (rootPart.CFrame - rootPart.CFrame.Position)
+                rootPart.AssemblyLinearVelocity = Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z)
+            end
+        end
+    end
+
+    local npcsFolder = Workspace:FindFirstChild("NPCs")
+    if not npcsFolder then return end
+
+    frameAccumulator = frameAccumulator + 1
+    if frameAccumulator >= 8 or #cachedEnemies == 0 then
+        frameAccumulator = 0
+        cachedEnemies = npcsFolder:GetChildren()
+    end
+
+    local closestEnemyModel = nil
+    local closestPart = nil
+    local shortestDistance = math.huge
+
+    for i = 1, #cachedEnemies do
+        local enemy = cachedEnemies[i]
+        if enemy and enemy.Parent then
+            if selectedTargetName == "ALL" or enemy.Name == selectedTargetName then
+                local enemyPart = enemy.ClassName == "Model" and (enemy.PrimaryPart or enemy:FindFirstChildWhichIsA("BasePart")) or (enemy.ClassName == "BasePart" and enemy)
+                if enemyPart then
+                    local distance = (rootPart.Position - enemyPart.Position).Magnitude
+                    if distance < shortestDistance then
+                        shortestDistance = distance
+                        closestEnemyModel = enemy
+                        closestPart = enemyPart
+                    end
+                end
+            end
+        end
+    end
+
+    if closestPart then
+        if autoKillEnabled then
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+            humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+
+            local currentDistanceToTarget = (rootPart.Position - closestPart.Position).Magnitude
+
+            if currentDistanceToTarget > 50.0 then
+                local dir = (closestPart.Position - rootPart.Position).Unit
+                rootPart.CFrame = CFrame.new(rootPart.Position + (dir * math.min(akSpeed * dt, currentDistanceToTarget)), closestPart.Position)
+                rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+            else
+                local targetCF = closestPart.CFrame
+                local isBossTarget = closestEnemyModel and bossTargetNames[closestEnemyModel.Name] == true
+
+                if isBossTarget then
+                    orbitAngle = orbitAngle + (dt * 18)
+                    local orbitRadius = 12.0
+                    local offsetX = math.cos(orbitAngle) * orbitRadius
+                    local offsetZ = math.sin(orbitAngle) * orbitRadius
+                    local desiredPos = targetCF.Position + Vector3.new(offsetX, 2.0, offsetZ)
+
+                    rootPart.CFrame = CFrame.new(desiredPos, targetCF.Position)
+                    rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                else
+                    swapTimer = swapTimer + dt
+                    if swapTimer >= 5.0 then
+                        swapTimer = 0
+                        activeAutoKillMode = activeAutoKillMode % 3 + 1
+                    end
+
+                    if activeAutoKillMode == 3 then
+                        orbitAngle = orbitAngle + (dt * 35)
+                        local orbitRadius = 12.0
+                        local offsetX = math.cos(orbitAngle) * orbitRadius
+                        local offsetZ = math.sin(orbitAngle) * orbitRadius
+                        local desiredPos = targetCF.Position + Vector3.new(offsetX, 1.5, offsetZ)
+
+                        rootPart.CFrame = CFrame.new(desiredPos, targetCF.Position)
+                        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    else
+                        local verticalOffset = (activeAutoKillMode == 1) and 9.0 or -9.0
+                        local desiredPos = targetCF.Position 
+                            + (targetCF.RightVector * akHorizontalOffset) 
+                            + (targetCF.LookVector * akDepthOffset) 
+                            + Vector3.new(0, verticalOffset, 0)
+                        
+                        rootPart.CFrame = CFrame.new(desiredPos, targetCF.Position)
+                        rootPart.AssemblyLinearVelocity = Vector3.new(0, 0, 0)
+                    end
+                end
+
+                attackCooldown = attackCooldown - dt
+                if attackCooldown <= 0 then
+                    attackCooldown = 0.25
+                    local combatActionRemote = ReplicatedStorage:FindFirstChild("Network") and ReplicatedStorage.Network:FindFirstChild("CombatAction")
+                    if combatActionRemote then
+                        pcall(function()
+                            combatActionRemote:FireServer("Light", closestEnemyModel, closestPart.Position)
+                        end)
+                    end
+                end
+            end
+        else
+            swapTimer = 0
+            orbitAngle = 0
+        end
+    end
+end)
+
+LocalPlayer.CharacterAdded:Connect(function()
+    if flyEnabled then flyEnabled = false stopFly() flyButton.Text = "Fly Mode: OFF" flyButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45) end
+    if swimEnabled then swimEnabled = false stopSwim() swimButton.Text = "Swim Mode: OFF" swimButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45) end
+    if noclipEnabled then startNoclip() end
+end)
+
+local isMinimized = false
+local normalSize = UDim2.new(0, 600, 0, 680)
+local minimizedSize = UDim2.new(0, 600, 0, 35)
+
+minimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    categoryBar.Visible = not isMinimized
+    espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
+    farmContainer.Visible = not isMinimized and (farmTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
+    playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(50, 70, 100))
+    mainWindow.Size = isMinimized and minimizedSize or normalSize
+    minimizeButton.Text = isMinimized and "+" or "-"
+end)
+
+closeButton.MouseButton1Click:Connect(function() warningOverlay.Visible = true end)
+cancelCloseBtn.MouseButton1Click:Connect(function() warningOverlay.Visible = false end)
+
+confirmCloseBtn.MouseButton1Click:Connect(function()
+    autoKillEnabled = false
+    hoverEnabled = false
+    shrineEnabled = false
+    chestEnabled = false
+    veinsEnabled = false
+    lootEspEnabled = false
+    loopRefreshEnabled = false
+    if flyEnabled then flyEnabled = false stopFly() end
+    if swimEnabled then swimEnabled = false stopSwim() end
+    if noclipEnabled then noclipEnabled = false stopNoclip() end
+    for item, _ in pairs(activeTags) do removeTag(item) end
+    screenGui:Destroy()
+end)
+
+goldenButton.MouseButton1Click:Connect(function()
+    goldenEnabled = not goldenEnabled
+    goldenButton.Text = goldenEnabled and "Golden Flower ESP: ON" or "Golden Flower ESP: OFF"
+    goldenButton.BackgroundColor3 = goldenEnabled and Color3.fromRGB(50, 42, 25) or Color3.fromRGB(28, 35, 45)
+    refreshGoldenFlowers()
+end)
+
+flowerButton.MouseButton1Click:Connect(function()
+    flowerEnabled = not flowerEnabled
+    flowerButton.Text = flowerEnabled and "Flower ESP: ON" or "Flower ESP: OFF"
+    flowerButton.BackgroundColor3 = flowerEnabled and Color3.fromRGB(55, 30, 45) or Color3.fromRGB(28, 35, 45)
+    refreshFlowers()
+end)
+
+enemyButton.MouseButton1Click:Connect(function()
+    enemyEnabled = not enemyEnabled
+    enemyButton.Text = enemyEnabled and "Enemy ESP: ON" or "Enemy ESP: OFF"
+    enemyButton.BackgroundColor3 = enemyEnabled and Color3.fromRGB(42, 30, 55) or Color3.fromRGB(28, 35, 45)
+    refreshEnemies()
+end)
+
+shrineButton.MouseButton1Click:Connect(function()
+    shrineEnabled = not shrineEnabled
+    shrineButton.Text = shrineEnabled and "Sunken Shrine ESP: ON" or "Sunken Shrine ESP: OFF"
+    shrineButton.BackgroundColor3 = shrineEnabled and Color3.fromRGB(20, 50, 70) or Color3.fromRGB(28, 35, 45)
+    refreshSunkenShrine()
+end)
+
+chestButton.MouseButton1Click:Connect(function()
+    chestEnabled = not chestEnabled
+    chestButton.Text = chestEnabled and "Chest ESP: ON" or "Chest ESP: OFF"
+    chestButton.BackgroundColor3 = chestEnabled and Color3.fromRGB(25, 50, 40) or Color3.fromRGB(28, 35, 45)
+    refreshChests()
+end)
+
+veinsButton.MouseButton1Click:Connect(function()
+    veinsEnabled = not veinsEnabled
+    veinsButton.Text = veinsEnabled and "Veins ESP: ON" or "Veins ESP: OFF"
+    veinsButton.BackgroundColor3 = veinsEnabled and Color3.fromRGB(55, 25, 25) or Color3.fromRGB(28, 35, 45)
+    refreshVeins()
+end)
+
+lootEspButton.MouseButton1Click:Connect(function()
+    lootEspEnabled = not lootEspEnabled
+    lootEspButton.Text = lootEspEnabled and "Loot ESP: ON" or "Loot ESP: OFF"
+    lootEspButton.BackgroundColor3 = lootEspEnabled and Color3.fromRGB(20, 65, 55) or Color3.fromRGB(28, 35, 45)
+    refreshLootESP()
+end)
+
+loopRefreshButton.MouseButton1Click:Connect(function()
+    loopRefreshEnabled = not loopRefreshEnabled
+    loopRefreshButton.Text = loopRefreshEnabled and "Loop ESP Refresh: ON" or "Loop ESP Refresh: OFF"
+    loopRefreshButton.BackgroundColor3 = loopRefreshEnabled and Color3.fromRGB(20, 55, 45) or Color3.fromRGB(25, 45, 38)
+    if loopRefreshEnabled then refreshAllActiveESPs() end
+end)
+
+aiButton.MouseButton1Click:Connect(function()
+    autoKillEnabled = not autoKillEnabled
+    swapTimer = 0
+    activeAutoKillMode = 1
+    orbitAngle = 0
+    
+    local char = LocalPlayer.Character
+    local rootPart = char and char:FindFirstChild("HumanoidRootPart")
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+    if not autoKillEnabled then
+        if rootPart then
+            teleportToPortalOrRunWorld(rootPart)
+        end
+        if hum and not swimEnabled then hum:ChangeState(Enum.HumanoidStateType.GettingUp) end
+    end
+
+    aiButton.Text = autoKillEnabled and "Auto Kill: ON" or "Auto Kill: OFF"
+    aiButton.BackgroundColor3 = autoKillEnabled and Color3.fromRGB(55, 25, 40) or Color3.fromRGB(28, 35, 45)
+end)
+
+hoverButton.MouseButton1Click:Connect(function()
+    hoverEnabled = not hoverEnabled
+    hoverButton.Text = hoverEnabled and "30 Studs Ground Hover: ON" or "30 Studs Ground Hover: OFF"
+    hoverButton.BackgroundColor3 = hoverEnabled and Color3.fromRGB(55, 50, 25) or Color3.fromRGB(28, 35, 45)
+end)
+
+flyButton.MouseButton1Click:Connect(function()
+    flyEnabled = not flyEnabled
+    flyButton.Text = flyEnabled and "Fly Mode: ON" or "Fly Mode: OFF"
+    flyButton.BackgroundColor3 = flyEnabled and Color3.fromRGB(25, 65, 55) or Color3.fromRGB(28, 35, 45)
+    if flyEnabled then startFly() else stopFly() end
+end)
+
+swimButton.MouseButton1Click:Connect(function()
+    swimEnabled = not swimEnabled
+    swimButton.Text = swimEnabled and "Swim Mode: ON" or "Swim Mode: OFF"
+    swimButton.BackgroundColor3 = swimEnabled and Color3.fromRGB(20, 50, 75) or Color3.fromRGB(28, 35, 45)
+    if swimEnabled then startSwim() else stopSwim() end
+end)
+
+noclipButton.MouseButton1Click:Connect(function()
+    noclipEnabled = not noclipEnabled
+    noclipButton.Text = noclipEnabled and "Noclip: ON" or "Noclip: OFF"
+    noclipButton.BackgroundColor3 = noclipEnabled and Color3.fromRGB(65, 25, 50) or Color3.fromRGB(28, 35, 45)
+    if noclipEnabled then startNoclip() else stopNoclip() end
+end)
+
+toggleListBtn.MouseButton1Click:Connect(function()
+    listOpen = not listOpen
+    targetDropdownFrame.Visible = listOpen
+    toggleListBtn.Text = listOpen and "Target Selection List: [OPEN]" or "Target Selection List: [CLOSED]"
+    if listOpen then populateTargetList() end
+end)
+
+local dragging = false
+local dragInput, dragStart, startPos
+
+topBar.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = mainWindow.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+
+topBar.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+        dragInput = input
+    end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+    if input == dragInput and dragging then
+        local delta = input.Position - dragStart
+        mainWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
