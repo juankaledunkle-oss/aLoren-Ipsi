@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau (Client Executor / LocalScript)
--- Updated: Added a Movement Predictor toggle button directly below the fling direction dropdown in the Combat tab, complete with trajectory compensation.
+-- Optimized: Native camera subject binding for OmniFling, fluid swim, fixed predictor toggle, and updated 0.5 stud oscillation when predictor is OFF.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -52,13 +52,12 @@ titleLabel.Size = UDim2.new(1, -260, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "Interface Hub (OmniFling Hub)"
+titleLabel.Text = "Interface Hub (OmniFling Hub - 0.5 Stud Oscillation when Predictor OFF)"
 titleLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
 titleLabel.Parent = topBar
 
--- Top-Bar Real FPS Counter with Dynamic Color Coding
 local topBarFpsLabel = Instance.new("TextLabel")
 topBarFpsLabel.Size = UDim2.new(0, 90, 1, 0)
 topBarFpsLabel.Position = UDim2.new(1, -225, 0, 0)
@@ -78,7 +77,6 @@ buttonHolder.Parent = topBar
 
 local minimizeButton = Instance.new("TextButton")
 minimizeButton.Size = UDim2.new(0, 30, 1, 0)
-minimizeButton.Position = UDim2.new(0, 0, 0, 0)
 minimizeButton.BackgroundTransparency = 1
 minimizeButton.Font = Enum.Font.GothamBold
 minimizeButton.Text = "-"
@@ -118,14 +116,14 @@ catLayout.Parent = categoryBar
 
 local function createTabButton(name, order)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.32, 0, 1, 0)
+    btn.Size = UDim2.new(0.23, 0, 1, 0)
     btn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     btn.BackgroundTransparency = 0.5
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(150, 220, 255)
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.LayoutOrder = order
     btn.Parent = categoryBar
 
@@ -138,6 +136,7 @@ end
 local espTabBtn = createTabButton("ESP & World", 1)
 local combatTabBtn = createTabButton("Combat", 2)
 local playerTabBtn = createTabButton("Player", 3)
+local teleportTabBtn = createTabButton("Teleport", 4)
 
 local function createTabContainer(name, canvasHeight)
     local frame = Instance.new("ScrollingFrame")
@@ -162,6 +161,7 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 850)
 local playerContainer = createTabContainer("PlayerContainer", 920)
+local teleportContainer = createTabContainer("TeleportContainer", 850)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
@@ -240,14 +240,13 @@ local function createButton(parent, text, color, order)
     return btn
 end
 
--- ESP & World Tab Buttons
+-- Tab Buttons
 local humEspButton = createButton(espContainer, "Precise 3D Box ESP (+ Highlight + Mass kg): OFF", Color3.fromRGB(100, 235, 255), 1)
 local pausedScreenButton = createButton(espContainer, "Remove Gameplay Paused Screen: ON", Color3.fromRGB(120, 255, 215), 2)
 local noTextureButton = createButton(espContainer, "No Texture: OFF", Color3.fromRGB(180, 210, 255), 3)
 local noFogButton = createButton(espContainer, "No Fog / Clear Atmosphere: OFF", Color3.fromRGB(140, 230, 255), 4)
 local fullBrightButton = createButton(espContainer, "Full Bright: OFF", Color3.fromRGB(175, 235, 255), 5)
 
--- COMBAT TAB SETUP
 local targetNearestEnabled = false
 local movementPredictorEnabled = false
 
@@ -267,8 +266,6 @@ local targetNearestBtn = createButton(combatContainer, "Target Nearest: OFF", Co
 local FlingDirections = {"Random", "Upward", "Downward"}
 local currentDirIndex = 1
 local flingDirButton = createButton(combatContainer, "OmniFling Priority: Random (Default)", Color3.fromRGB(140, 180, 255), 3)
-
--- Movement Predictor Toggle Button placed directly below Fling Direction
 local movementPredictorBtn = createButton(combatContainer, "Movement Predictor: OFF", Color3.fromRGB(120, 255, 180), 4)
 
 local dirDropdownFrame = Instance.new("Frame")
@@ -505,7 +502,85 @@ local daCorner = Instance.new("UICorner")
 daCorner.CornerRadius = UDim.new(0, 4)
 daCorner.Parent = deselectAllBtn
 
--- ================= PERSONALIZED STATS PANEL =================
+-- Teleport Tab Controls (.humanoids Teleportation)
+local tpHeaderLabel = Instance.new("TextLabel")
+tpHeaderLabel.Size = UDim2.new(1, 0, 0, 30)
+tpHeaderLabel.BackgroundTransparency = 1
+tpHeaderLabel.Font = Enum.Font.GothamBold
+tpHeaderLabel.Text = "Teleportation Utilities"
+tpHeaderLabel.TextColor3 = Color3.fromRGB(180, 230, 255)
+tpHeaderLabel.TextSize = 13
+tpHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
+tpHeaderLabel.LayoutOrder = 1
+tpHeaderLabel.Parent = teleportContainer
+
+local tpHumanoidsBtn = createButton(teleportContainer, "Teleport to .humanoids Container / Target", Color3.fromRGB(120, 255, 220), 2)
+
+local tpStatusLabel = Instance.new("TextLabel")
+tpStatusLabel.Size = UDim2.new(1, 0, 0, 30)
+tpStatusLabel.BackgroundTransparency = 1
+tpStatusLabel.Font = Enum.Font.GothamSemibold
+tpStatusLabel.Text = "Status: Ready to teleport"
+tpStatusLabel.TextColor3 = Color3.fromRGB(160, 200, 230)
+tpStatusLabel.TextSize = 12
+tpStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
+tpStatusLabel.LayoutOrder = 3
+tpStatusLabel.Parent = teleportContainer
+
+tpHumanoidsBtn.MouseButton1Click:Connect(function()
+    pcall(function()
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if not root then
+            tpStatusLabel.Text = "Status: Error - LocalPlayer character or RootPart missing!"
+            return
+        end
+
+        local targetPos = nil
+        for _, descendant in ipairs(Workspace:GetDescendants()) do
+            if descendant.Name:lower() == ".humanoids" or descendant.Name:lower() == "humanoids" then
+                if descendant:IsA("BasePart") then
+                    targetPos = descendant.Position
+                    break
+                elseif descendant:IsA("Model") or descendant:IsA("Folder") then
+                    local primary = descendant.PrimaryPart or descendant:FindFirstChildWhichIsA("BasePart")
+                    if primary then
+                        targetPos = primary.Position
+                        break
+                    end
+                end
+            end
+        end
+
+        if not targetPos then
+            local nearestDist = math.huge
+            for _, obj in ipairs(Workspace:GetDescendants()) do
+                if obj:IsA("Humanoid") then
+                    local m = obj.Parent
+                    local rp = m and (m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart"))
+                    if rp and m ~= char then
+                        local dist = (root.Position - rp.Position).Magnitude
+                        if dist < nearestDist then
+                            nearestDist = dist
+                            targetPos = rp.Position + Vector3.new(0, 3, 0)
+                        end
+                    end
+                end
+            end
+        end
+
+        if targetPos then
+            root.CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))
+            tpStatusLabel.Text = "Status: Successfully teleported to .humanoids target!"
+            Notification("Teleport", "Teleported to .humanoids location successfully!", 2)
+        else
+            tpStatusLabel.Text = "Status: No .humanoids or targets found in workspace."
+            Notification("Teleport", "No .humanoids target found!", 2)
+        end
+    end)
+end)
+
+-- Player Stats Panel
 local statsPanel = Instance.new("Frame")
 statsPanel.Name = "StatsPanel"
 statsPanel.Size = UDim2.new(1, 0, 0, 260)
@@ -548,15 +623,7 @@ tableLayout.Padding = UDim.new(0, 2)
 tableLayout.Parent = statsTableContainer
 
 local statLabels = {}
-local statKeys = {
-    "Name",
-    "Health",
-    "Speed (Studs/s)",
-    "WalkSpeed",
-    "JumpHeight",
-    "Status",
-    "Weight (kg)"
-}
+local statKeys = {"Name", "Health", "Speed (Studs/s)", "WalkSpeed", "JumpHeight", "Status", "Weight (kg)"}
 
 for i, key in ipairs(statKeys) do
     local row = Instance.new("Frame")
@@ -607,24 +674,16 @@ avatarViewport.CurrentCamera = avCam
 avCam.Parent = avatarViewport
 
 local clonedAvatarModel = nil
-
 local function updateAvatarPreview()
-    if clonedAvatarModel then 
-        clonedAvatarModel:Destroy() 
-        clonedAvatarModel = nil 
-    end
-    
+    if clonedAvatarModel then clonedAvatarModel:Destroy() clonedAvatarModel = nil end
     local char = LocalPlayer.Character
     if char then
         char.Archivable = true
         clonedAvatarModel = char:Clone()
         for _, obj in ipairs(clonedAvatarModel:GetDescendants()) do
-            if obj:IsA("Script") or obj:IsA("LocalScript") then
-                obj:Destroy()
-            end
+            if obj:IsA("Script") or obj:IsA("LocalScript") then obj:Destroy() end
         end
         clonedAvatarModel.Parent = avatarViewport
-
         local head = clonedAvatarModel:FindFirstChild("Head") or clonedAvatarModel.PrimaryPart
         if head then
             local rootPart = clonedAvatarModel:FindFirstChild("HumanoidRootPart") or head
@@ -637,15 +696,12 @@ LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     updateAvatarPreview()
 end)
-
 task.defer(updateAvatarPreview)
 
--- Player Tab buttons (Arranged Alphabetically, with Fly Speed Amount directly under Fly Mode)
 local hoverButton = createButton(playerContainer, "30 Studs Ground Hover: OFF", Color3.fromRGB(140, 230, 255), 2)
 local cameraZoomButton = createButton(playerContainer, "Enable 3rd person: OFF", Color3.fromRGB(190, 190, 255), 3)
 local flyButton = createButton(playerContainer, "Fly Mode: OFF", Color3.fromRGB(100, 255, 230), 4)
 
--- Fly Speed Amount Container placed directly under Fly Mode
 local speedContainer = Instance.new("Frame")
 speedContainer.Size = UDim2.new(1, 0, 0, 40)
 speedContainer.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
@@ -685,13 +741,11 @@ local boxCorner2 = Instance.new("UICorner")
 boxCorner2.CornerRadius = UDim.new(0, 4)
 boxCorner2.Parent = speedBox
 
--- Remaining Player buttons ordered alphabetically
 local infJumpButton = createButton(playerContainer, "Infinite Jump: OFF", Color3.fromRGB(110, 255, 210), 6)
 local noclipButton = createButton(playerContainer, "Noclip: OFF", Color3.fromRGB(180, 200, 255), 7)
 local joystickButton = createButton(playerContainer, "On-Screen Joystick: OFF", Color3.fromRGB(150, 235, 255), 8)
 local swimButton = createButton(playerContainer, "Swim Mode: OFF", Color3.fromRGB(120, 210, 255), 9)
 
--- ON-SCREEN JOYSTICK UI SETUP
 local joystickFrame = Instance.new("Frame")
 joystickFrame.Name = "CustomJoystickBase"
 joystickFrame.Size = UDim2.new(0, 130, 0, 130)
@@ -734,6 +788,7 @@ local function switchTab(activeTab, activeBtn)
     espContainer.Visible = false
     combatContainer.Visible = false
     playerContainer.Visible = false
+    teleportContainer.Visible = false
     
     espTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     espTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
@@ -741,6 +796,8 @@ local function switchTab(activeTab, activeBtn)
     combatTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     playerTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
+    teleportTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
+    teleportTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     
     activeTab.Visible = true
     activeBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
@@ -750,6 +807,7 @@ end
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
 combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, combatTabBtn) end)
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
+teleportTabBtn.MouseButton1Click:Connect(function() switchTab(teleportContainer, teleportTabBtn) end)
 
 local hoverEnabled = false
 local flyEnabled = false
@@ -791,15 +849,11 @@ local originalCameraSettings = {
 local function getESPColor(model)
     local player = Players:GetPlayerFromCharacter(model)
     if player then
-        if player.Team and player.Team.TeamColor then
-            return player.Team.TeamColor.Color
-        end
+        if player.Team and player.Team.TeamColor then return player.Team.TeamColor.Color end
         return COLOR_PLAYER_DEFAULT
     else
         local tc = model:FindFirstChild("TeamColor")
-        if tc and typeof(tc.Value) == "Color3" then
-            return tc.Value
-        end
+        if tc and typeof(tc.Value) == "Color3" then return tc.Value end
         return COLOR_NPC_DEFAULT
     end
 end
@@ -807,50 +861,53 @@ end
 local function getModelMassKg(model)
     local totalMass = 0
     for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            totalMass = totalMass + part.AssemblyMass
-        end
+        if part:IsA("BasePart") then totalMass = totalMass + part.AssemblyMass end
     end
     return math.floor(totalMass)
 end
 
--- Actual live FPS calculation loop using RenderStepped delta (dt)
+-- Consolidated Central RenderLoop (FPS, Stats UI, Hover physics)
+local raycastParams = RaycastParams.new()
+raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+
 RunService.RenderStepped:Connect(function(dt)
+    -- 1. FPS Tracker
     local fps = dt > 0 and math.floor(1 / dt) or 60
     topBarFpsLabel.Text = "FPS: " .. fps
-    
-    if fps >= 50 then
-        topBarFpsLabel.TextColor3 = Color3.fromRGB(120, 255, 120) -- Green (High)
-    elseif fps >= 30 then
-        topBarFpsLabel.TextColor3 = Color3.fromRGB(255, 230, 100) -- Yellow (Mid)
-    else
-        topBarFpsLabel.TextColor3 = Color3.fromRGB(255, 100, 100) -- Red (Low)
-    end
+    topBarFpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(120, 255, 120) or (fps >= 30 and Color3.fromRGB(255, 230, 100) or Color3.fromRGB(255, 100, 100))
 
+    -- 2. Player Stats Update
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     local root = char and char:FindFirstChild("HumanoidRootPart")
 
-    statLabels["Name"].Text = LocalPlayer.Name
-    statLabels["Health"].Text = hum and string.format("%d / %d", math.floor(hum.Health), math.floor(hum.MaxHealth)) or "N/A"
-    
-    local vel = root and root.AssemblyLinearVelocity or Vector3.new()
-    local horizontalVel = math.sqrt(vel.X * vel.X + vel.Z * vel.Z)
-    statLabels["Speed (Studs/s)"].Text = string.format("%.1f studs/s", horizontalVel)
-    
-    statLabels["WalkSpeed"].Text = hum and tostring(math.floor(hum.WalkSpeed)) or "N/A"
-    
-    local jumpVal = hum and (hum.UseJumpPower and hum.JumpPower or hum.JumpHeight) or 0
-    statLabels["JumpHeight"].Text = string.format("%.1f", jumpVal)
-    
-    statLabels["Status"].Text = hum and hum:GetState().Name or "Unknown"
-    
-    local kg = char and getModelMassKg(char) or 0
-    statLabels["Weight (kg)"].Text = string.format("%d kg", kg)
+    if statLabels["Name"] then
+        statLabels["Name"].Text = LocalPlayer.Name
+        statLabels["Health"].Text = hum and string.format("%d / %d", math.floor(hum.Health), math.floor(hum.MaxHealth)) or "N/A"
+        
+        local vel = root and root.AssemblyLinearVelocity or Vector3.new()
+        statLabels["Speed (Studs/s)"].Text = string.format("%.1f studs/s", math.sqrt(vel.X * vel.X + vel.Z * vel.Z))
+        statLabels["WalkSpeed"].Text = hum and tostring(math.floor(hum.WalkSpeed)) or "N/A"
+        statLabels["JumpHeight"].Text = string.format("%.1f", hum and (hum.UseJumpPower and hum.JumpPower or hum.JumpHeight) or 0)
+        statLabels["Status"].Text = hum and hum:GetState().Name or "Unknown"
+        statLabels["Weight (kg)"].Text = string.format("%d kg", char and getModelMassKg(char) or 0)
+    end
+
+    -- 3. Ground Hover Logic
+    if hoverEnabled and not flyEnabled and not swimEnabled and root then
+        raycastParams.FilterDescendantsInstances = {char}
+        local rayResult = Workspace:Raycast(root.Position + Vector3.new(0, 3.8, 0), Vector3.new(0, -150, 0), raycastParams)
+        if rayResult then
+            local targetHeight = rayResult.Position.Y + 33.0
+            if root.Position.Y < targetHeight or root.AssemblyLinearVelocity.Y < 1 then
+                root.CFrame = CFrame.new(root.Position.X, targetHeight, root.Position.Z) * (root.CFrame - root.CFrame.Position)
+                root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
+            end
+        end
+    end
 end)
 
 local espCache = {}
-
 local function createESPForModel(model)
     if espCache[model] or model == LocalPlayer.Character then return end
 
@@ -922,21 +979,15 @@ local function removeESPForModel(model)
 end
 
 for _, obj in ipairs(Workspace:GetDescendants()) do
-    if obj:IsA("Humanoid") and obj.Parent then
-        createESPForModel(obj.Parent)
-    end
+    if obj:IsA("Humanoid") and obj.Parent then createESPForModel(obj.Parent) end
 end
 
 Workspace.DescendantAdded:Connect(function(descendant)
-    if descendant:IsA("Humanoid") and descendant.Parent then
-        createESPForModel(descendant.Parent)
-    end
+    if descendant:IsA("Humanoid") and descendant.Parent then createESPForModel(descendant.Parent) end
 end)
 
 Workspace.DescendantRemoving:Connect(function(descendant)
-    if descendant:IsA("Humanoid") and descendant.Parent then
-        removeESPForModel(descendant.Parent)
-    end
+    if descendant:IsA("Humanoid") and descendant.Parent then removeESPForModel(descendant.Parent) end
 end)
 
 local cornersBuffer = table.create(8)
@@ -957,17 +1008,15 @@ RunService.RenderStepped:Connect(function()
                 data.Highlight.FillColor = espColor
                 data.Highlight.OutlineColor = espColor
                 data.NameLabel.TextColor3 = espColor
-                for _, line in ipairs(data.BoxLines) do
-                    line.BackgroundColor3 = espColor
-                end
+                for _, line in ipairs(data.BoxLines) do line.BackgroundColor3 = espColor end
             end
 
             data.Highlight.Enabled = true
 
             local cf, size = model:GetBoundingBox()
             cf = cf + Vector3.new(0, 2, 0)
-
             local hX, hY, hZ = size.X/2, size.Y/2, size.Z/2
+
             cornersBuffer[1] = cf * Vector3.new(-hX, -hY, -hZ)
             cornersBuffer[2] = cf * Vector3.new(hX, -hY, -hZ)
             cornersBuffer[3] = cf * Vector3.new(hX, hY, -hZ)
@@ -983,9 +1032,7 @@ RunService.RenderStepped:Connect(function()
 
             for i = 1, 8 do
                 local screenPos, onScreen = Camera:WorldToViewportPoint(cornersBuffer[i])
-                if onScreen then 
-                    onScreenCount = onScreenCount + 1 
-                end
+                if onScreen then onScreenCount = onScreenCount + 1 end
                 if screenPos.X < minX then minX = screenPos.X end
                 if screenPos.X > maxX then maxX = screenPos.X end
                 if screenPos.Y < minY then minY = screenPos.Y end
@@ -993,8 +1040,7 @@ RunService.RenderStepped:Connect(function()
             end
 
             if onScreenCount > 0 then
-                local boxW = maxX - minX
-                local boxH = maxY - minY
+                local boxW, boxH = maxX - minX, maxY - minY
                 local lines = data.BoxLines
 
                 lines[1].Size = UDim2.new(0, boxW, 0, 1.5)
@@ -1045,17 +1091,12 @@ getgenv().FPDH = workspace.FallenPartsDestroyHeight
 
 local function Notification(Title, Text, Time)
     pcall(function()
-        StarterGui:SetCore("SendNotification", {
-            Title = Title,
-            Text = Text,
-            Duration = Time or 3
-        })
+        StarterGui:SetCore("SendNotification", { Title = Title, Text = Text, Duration = Time or 3 })
     end)
 end
 
 local function GetCategorizedTargets()
-    local playerTargets = {}
-    local entityTargets = {}
+    local playerTargets, entityTargets = {}, {}
     local localChar = LocalPlayer.Character
     local localPos = (localChar and localChar:FindFirstChild("HumanoidRootPart")) and localChar.HumanoidRootPart.Position or Camera.CFrame.Position
 
@@ -1066,13 +1107,7 @@ local function GetCategorizedTargets()
                 local rootPart = charModel:FindFirstChild("HumanoidRootPart") or charModel:FindFirstChild("PrimaryPart") or charModel:FindFirstChildWhichIsA("BasePart")
                 local dist = rootPart and (localPos - rootPart.Position).Magnitude or math.huge
                 
-                local targetData = {
-                    Name = charModel.Name .. " (" .. charModel.ClassName .. ")",
-                    Model = charModel,
-                    Humanoid = obj,
-                    Distance = dist
-                }
-
+                local targetData = { Name = charModel.Name .. " (" .. charModel.ClassName .. ")", Model = charModel, Humanoid = obj, Distance = dist }
                 if Players:GetPlayerFromCharacter(charModel) then
                     table.insert(playerTargets, targetData)
                 else
@@ -1082,13 +1117,9 @@ local function GetCategorizedTargets()
         end
     end
     
-    if targetNearestEnabled then
-        table.sort(playerTargets, function(a, b) return a.Distance < b.Distance end)
-        table.sort(entityTargets, function(a, b) return a.Distance < b.Distance end)
-    else
-        table.sort(playerTargets, function(a, b) return a.Name:lower() < b.Name:lower() end)
-        table.sort(entityTargets, function(a, b) return a.Name:lower() < b.Name:lower() end)
-    end
+    local sortFunc = targetNearestEnabled and function(a, b) return a.Distance < b.Distance end or function(a, b) return a.Name:lower() < b.Name:lower() end
+    table.sort(playerTargets, sortFunc)
+    table.sort(entityTargets, sortFunc)
     
     return playerTargets, entityTargets
 end
@@ -1116,9 +1147,7 @@ local function UpdateFlingStatus()
 end
 
 local function PopulateList(scrollFrame, targets, filterText)
-    for _, child in pairs(scrollFrame:GetChildren()) do
-        child:Destroy()
-    end
+    for _, child in pairs(scrollFrame:GetChildren()) do child:Destroy() end
     
     local yPos = 5
     for _, targetData in ipairs(targets) do
@@ -1188,11 +1217,7 @@ local function PopulateList(scrollFrame, targets, filterText)
                 UpdateFlingStatus()
             end)
             
-            TargetCheckboxes[targetKey] = {
-                Entry = entry,
-                Checkmark = checkmark
-            }
-            
+            TargetCheckboxes[targetKey] = { Entry = entry, Checkmark = checkmark }
             yPos = yPos + 30
         end
     end
@@ -1203,7 +1228,6 @@ local function RefreshTargetLists()
     TargetCheckboxes = {}
     local pTargets, eTargets = GetCategorizedTargets()
     local filterText = searchBox.Text:lower()
-    
     PopulateList(playerScrollFrame, pTargets, filterText)
     PopulateList(entityScrollFrame, eTargets, filterText)
 end
@@ -1221,18 +1245,13 @@ end)
 local function GetModelMass(model)
     local totalMass = 0
     for _, part in ipairs(model:GetDescendants()) do
-        if part:IsA("BasePart") then
-            totalMass = totalMass + part.AssemblyMass
-        end
+        if part:IsA("BasePart") then totalMass = totalMass + part.AssemblyMass end
     end
     return math.max(totalMass, 1)
 end
 
--- ================= ORBIT CAMERA WITH INVERTED UP/DOWN =================
+-- ================= NATIVE CAMERA SUBJECT TRACKING FOR OMNIFLING =================
 local oscillationCycleCounter = 0
-local activeTargetForCamera = nil
-local cameraAngleX = 0
-local cameraAngleY = math.rad(20)
 
 local function SkidSelectionAxisFlingModel(TargetData)
     local Character = LocalPlayer.Character
@@ -1242,12 +1261,18 @@ local function SkidSelectionAxisFlingModel(TargetData)
     
     if not TCharacter or not TCharacter.Parent then return end
     
-    activeTargetForCamera = TCharacter
     local THumanoid = TargetData.Humanoid
     local TRootPart = THumanoid and THumanoid.RootPart
     local THead = TCharacter:FindFirstChild("Head")
     local Accessory = TCharacter:FindFirstChildOfClass("Accessory")
     local Handle = Accessory and Accessory:FindFirstChild("Handle")
+    local targetPart = TRootPart or THead or Handle or TCharacter:FindFirstChildWhichIsA("BasePart")
+    
+    if targetPart then
+        Camera.CameraType = Enum.CameraType.Custom
+        LocalPlayer.CameraMaxZoomDistance = 999999
+        Camera.CameraSubject = targetPart
+    end
     
     if Character and Humanoid and RootPart then
         if not getgenv().OldPos or RootPart.Velocity.Magnitude < 50 then
@@ -1257,8 +1282,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
         if THumanoid and THumanoid.Sit then return end
         if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
         
-        local targetMass = GetModelMass(TCharacter)
-        local exponentialMultiplier = math.clamp(math.pow(targetMass, 1.3), 1, 50)
+        local exponentialMultiplier = math.clamp(math.pow(GetModelMass(TCharacter), 1.3), 1, 50)
         local predictedPos = TRootPart and TRootPart.Position or RootPart.Position
         
         local FPosAxis = function(BasePart, frontBackStep)
@@ -1268,28 +1292,23 @@ local function SkidSelectionAxisFlingModel(TargetData)
             
             local velocityTarget = Vector3.new()
             local cframeOffset = Vector3.new()
-
             local sideOffset = (math.random() > 0.5 and 1 or -1) * 0.5
             local verticalOffset = (frontBackStep > 0 and 0.5 or -0.5)
 
             oscillationCycleCounter = oscillationCycleCounter + 1
-            local useInsideNesting = (oscillationCycleCounter % 2 == 0)
-
             local dynamicFrontBack = 0
-            if useInsideNesting then
-                dynamicFrontBack = 0
-            else
+            if oscillationCycleCounter % 2 ~= 0 then
                 local actualTargetPos = TRootPart and TRootPart.Position or BasePart.Position
-                local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new(0, 0, 0)
+                local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new()
                 
-                -- Movement Predictor logic integration
                 if movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
                     actualTargetPos = actualTargetPos + (targetVelocity * 0.35)
+                    predictedPos = predictedPos:Lerp(actualTargetPos + (targetVelocity * 0.5), 0.3)
+                    dynamicFrontBack = frontBackStep + (targetVelocity.Magnitude * 0.2)
+                else
+                    predictedPos = actualTargetPos
+                    dynamicFrontBack = frontBackStep
                 end
-
-                local rawPrediction = actualTargetPos + (targetVelocity * 0.5)
-                predictedPos = predictedPos:Lerp(rawPrediction, 0.3)
-                dynamicFrontBack = frontBackStep + (targetVelocity.Magnitude * 0.2)
             end
 
             local horizontalStagger = (rightVector * sideOffset) + (lookVector * dynamicFrontBack)
@@ -1307,15 +1326,9 @@ local function SkidSelectionAxisFlingModel(TargetData)
             
             local flattenedTargetPos = Vector3.new(predictedPos.X, BasePart.Position.Y, predictedPos.Z)
             local dirToTarget = (flattenedTargetPos - BasePart.Position)
-            if dirToTarget.Magnitude > 0.01 then
-                dirToTarget = dirToTarget.Unit
-            else
-                dirToTarget = Vector3.new(0, 0, -1)
-            end
+            dirToTarget = dirToTarget.Magnitude > 0.01 and dirToTarget.Unit or Vector3.new(0, 0, -1)
 
-            local spinOffset = math.sin(tick() * 65) * 1.2
-            local baseFaceCFrame = CFrame.lookAt(BasePart.Position + cframeOffset, BasePart.Position + cframeOffset + dirToTarget)
-            local faceCFrame = baseFaceCFrame * CFrame.Angles(0, math.rad(120) + spinOffset, 0)
+            local faceCFrame = CFrame.lookAt(BasePart.Position + cframeOffset, BasePart.Position + cframeOffset + dirToTarget) * CFrame.Angles(0, math.rad(120) + math.sin(tick() * 65) * 1.2, 0)
 
             RootPart.CFrame = faceCFrame
             Character:SetPrimaryPartCFrame(faceCFrame)
@@ -1324,36 +1337,32 @@ local function SkidSelectionAxisFlingModel(TargetData)
         end
         
         local SFBasePart = function(BasePart)
-            local TimeToWait = 2
             local Time = tick()
+            -- Set oscillation step size dynamically based on movementPredictorEnabled state (0.5 if OFF, 6.0 if ON)
+            local stepSize = movementPredictorEnabled and 6.0 or 0.5
             repeat
                 if RootPart and THumanoid then
-                    FPosAxis(BasePart, 6.0)
+                    FPosAxis(BasePart, stepSize)
                     task.wait()
-                    FPosAxis(BasePart, -6.0)
+                    FPosAxis(BasePart, -stepSize)
                     task.wait()
                 end
-            until Time + TimeToWait < tick() or not FlingActive
+            until Time + 2 < tick() or not FlingActive
         end
         
         workspace.FallenPartsDestroyHeight = 0/0
-        
         local BV = Instance.new("BodyVelocity")
         BV.Parent = RootPart
-        BV.Velocity = Vector3.new(0, 0, 0)
+        BV.Velocity = Vector3.new()
         BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
         
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
         Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
         
-        if TRootPart then
-            SFBasePart(TRootPart)
-        elseif THead then
-            SFBasePart(THead)
-        elseif Handle then
-            SFBasePart(Handle)
-        end
+        if TRootPart then SFBasePart(TRootPart)
+        elseif THead then SFBasePart(THead)
+        elseif Handle then SFBasePart(Handle) end
         
         BV:Destroy()
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
@@ -1361,36 +1370,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
     end
 end
 
--- Inverted vertical camera drag
-UserInputService.InputChanged:Connect(function(input)
-    if FlingActive and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-        if UserInputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton2) or UserInputService.TouchEnabled then
-            cameraAngleX = cameraAngleX - input.Delta.X * 0.005
-            cameraAngleY = math.clamp(cameraAngleY + input.Delta.Y * 0.005, -math.rad(80), math.rad(80))
-        end
-    end
-end)
-
-RunService.RenderStepped:Connect(function()
-    if FlingActive and activeTargetForCamera and activeTargetForCamera.Parent then
-        local tRoot = activeTargetForCamera:FindFirstChild("HumanoidRootPart") or activeTargetForCamera:FindFirstChild("PrimaryPart") or activeTargetForCamera:FindFirstChildWhichIsA("BasePart")
-        if tRoot then
-            Camera.CameraType = Enum.CameraType.Scriptable
-            local targetFocus = tRoot.Position + Vector3.new(0, 2, 0)
-            local distance = 14
-            
-            local offsetX = math.sin(cameraAngleX) * math.cos(cameraAngleY) * distance
-            local offsetY = math.sin(cameraAngleY) * distance
-            local offsetZ = math.cos(cameraAngleX) * math.cos(cameraAngleY) * distance
-            
-            local camPos = targetFocus + Vector3.new(offsetX, offsetY, offsetZ)
-            Camera.CFrame = CFrame.lookAt(camPos, targetFocus)
-        end
-    end
-end)
-
 local function ReturnToOriginalPosition()
-    activeTargetForCamera = nil
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local rootPart = humanoid and humanoid.RootPart
@@ -1402,9 +1382,7 @@ local function ReturnToOriginalPosition()
             character:SetPrimaryPartCFrame(getgenv().OldPos * CFrame.new(0, 0.5, 0))
             humanoid:ChangeState("GettingUp")
             for _, part in pairs(character:GetChildren()) do
-                if part:IsA("BasePart") then
-                    part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new()
-                end
+                if part:IsA("BasePart") then part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new() end
             end
             task.wait()
         until (rootPart.Position - getgenv().OldPos.p).Magnitude < 15 or (tick() - startTime) > 2
@@ -1419,19 +1397,12 @@ end
 startFlingBtn.MouseButton1Click:Connect(function()
     if FlingActive then return end
     local mode = FlingDirections[currentDirIndex]
-    
-    local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
-    if root then
-        getgenv().OldPos = root.CFrame
-    end
+    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    if root then getgenv().OldPos = root.CFrame end
     
     if targetNearestEnabled then
         local nearest = GetNearestSingleTarget()
-        if not nearest then
-            Notification("OmniFling", "No targets found in workspace!", 2)
-            return
-        end
+        if not nearest then Notification("OmniFling", "No targets found in workspace!", 2) return end
         FlingActive = true
         UpdateFlingStatus()
         Notification("OmniFling", "Started priority (" .. mode .. ") flinging nearest target", 2)
@@ -1439,7 +1410,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
         task.spawn(function()
             while FlingActive do
                 local currentNearest = GetNearestSingleTarget()
-                if currentNearest and currentNearest.Model and currentNearest.Model.Parent and currentNearest.Humanoid and currentNearest.Humanoid.Parent then
+                if currentNearest and currentNearest.Model and currentNearest.Model.Parent then
                     SkidSelectionAxisFlingModel(currentNearest)
                 end
                 UpdateFlingStatus()
@@ -1450,10 +1421,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
     else
         local count = 0
         for _ in pairs(SelectedTargets) do count = count + 1 end
-        if count == 0 then
-            Notification("OmniFling", "Select at least one target first!", 2)
-            return
-        end
+        if count == 0 then Notification("OmniFling", "Select at least one target first!", 2) return end
         
         FlingActive = true
         UpdateFlingStatus()
@@ -1461,17 +1429,14 @@ startFlingBtn.MouseButton1Click:Connect(function()
         
         task.spawn(function()
             while FlingActive do
-                local validTargets = {}
                 for key, targetData in pairs(SelectedTargets) do
-                    if targetData and targetData.Model and targetData.Model.Parent and targetData.Humanoid and targetData.Humanoid.Parent then
-                        validTargets[key] = targetData
-                    else
+                    if not targetData.Model or not targetData.Model.Parent then
                         SelectedTargets[key] = nil
                         if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = false end
                     end
                 end
                 
-                for _, targetData in pairs(validTargets) do
+                for _, targetData in pairs(SelectedTargets) do
                     if FlingActive then
                         SkidSelectionAxisFlingModel(targetData)
                         task.wait(0.1)
@@ -1498,8 +1463,7 @@ end)
 selectAllBtn.MouseButton1Click:Connect(function()
     local pTargets, eTargets = GetCategorizedTargets()
     local filterText = searchBox.Text:lower()
-    
-    local function selectGroup(list)
+    for _, list in ipairs({pTargets, eTargets}) do
         for _, targetData in ipairs(list) do
             if filterText == "" or string.find(targetData.Name:lower(), filterText, 1, true) then
                 local key = tostring(targetData.Model)
@@ -1508,25 +1472,18 @@ selectAllBtn.MouseButton1Click:Connect(function()
             end
         end
     end
-    
-    selectGroup(pTargets)
-    selectGroup(eTargets)
     UpdateFlingStatus()
 end)
 
 deselectAllBtn.MouseButton1Click:Connect(function()
     SelectedTargets = {}
-    for _, cb in pairs(TargetCheckboxes) do
-        cb.Checkmark.Visible = false
-    end
+    for _, cb in pairs(TargetCheckboxes) do cb.Checkmark.Visible = false end
     UpdateFlingStatus()
 end)
 
 task.spawn(function()
     while screenGui.Parent do
-        if not FlingActive and combatContainer.Visible then
-            RefreshTargetLists()
-        end
+        if not FlingActive and combatContainer.Visible then RefreshTargetLists() end
         task.wait(3)
     end
 end)
@@ -1539,6 +1496,7 @@ speedBox.FocusLost:Connect(function()
     if val then flySpeed = val else speedBox.Text = tostring(flySpeed) end
 end)
 
+-- Fly / Swim / Movement handlers
 local function startFly()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1550,26 +1508,18 @@ local function startFly()
     if bv then bv:Destroy() end
     
     bg = Instance.new("BodyGyro", root)
-    bg.P = 9e4
-    bg.maxTorque = Vector3.new(9e4, 9e4, 9e4)
+    bg.P, bg.maxTorque = 9e4, Vector3.new(9e4, 9e4, 9e4)
     bg.cframe = root.CFrame
     
     bv = Instance.new("BodyVelocity", root)
-    bv.Velocity = Vector3.new(0, 0, 0)
-    bv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+    bv.Velocity, bv.MaxForce = Vector3.new(), Vector3.new(9e4, 9e4, 9e4)
 
     if flyConnection then flyConnection:Disconnect() end
-    
     flyConnection = RunService.RenderStepped:Connect(function()
-        local currentCharacter = LocalPlayer.Character
-        local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
-        local currentHum = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
-        
-        if not currentCharacter or not currentRoot or not bv or not bg then return end
-
+        if not bg or not bv then return end
         bg.cframe = Camera.CFrame
         local moveDir = Vector3.new()
-        local moveVector = currentHum and currentHum.MoveDirection or Vector3.new()
+        local moveVector = hum and hum.MoveDirection or Vector3.new()
         
         if moveVector.Magnitude > 0 then
             local camCF = Camera.CFrame
@@ -1588,24 +1538,31 @@ local function startFly()
             moveDir = moveDir + (Camera.CFrame.RightVector * joystickDir.X) + (Camera.CFrame.LookVector * -joystickDir.Y)
         end
 
-        if moveDir.Magnitude > 0 then
-            bv.Velocity = moveDir.Unit * flySpeed
-        else
-            bv.Velocity = Vector3.new(0, 0.1, 0)
-        end
+        bv.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * flySpeed or Vector3.new(0, 0.1, 0)
     end)
 end
 
 local function stopFly()
     if flyConnection then flyConnection:Disconnect() flyConnection = nil end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if hum and not swimEnabled then hum.PlatformStand = false end
     if bg then bg:Destroy() bg = nil end
     if bv then bv:Destroy() bv = nil end
 end
 
-local swimGyro, swimVelocity
+-- ================= NATIVE FLUID SWIM MODE =================
+local function getWorkspaceWaterParts()
+    local waterParts = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") then
+            if obj.Material == Enum.Material.Water or string.find(obj.Name:lower(), "water") or string.find(obj.Name:lower(), "fluid") or string.find(obj.Name:lower(), "ocean") or string.find(obj.Name:lower(), "sea") then
+                table.insert(waterParts, obj)
+            end
+        end
+    end
+    return waterParts
+end
+
 local function startSwim()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1615,32 +1572,16 @@ local function startSwim()
     hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
     hum:ChangeState(Enum.HumanoidStateType.Swimming)
 
-    if swimGyro then swimGyro:Destroy() end
-    if swimVelocity then swimVelocity:Destroy() end
-
-    swimGyro = Instance.new("BodyGyro", root)
-    swimGyro.P = 9e4
-    swimGyro.maxTorque = Vector3.new(9e4, 9e4, 9e4)
-    swimGyro.cframe = root.CFrame
-
-    swimVelocity = Instance.new("BodyVelocity", root)
-    swimVelocity.Velocity = Vector3.new(0, 0, 0)
-    swimVelocity.MaxForce = Vector3.new(9e4, 9e4, 9e4)
-
     if swimConnection then swimConnection:Disconnect() end
     swimConnection = RunService.RenderStepped:Connect(function()
-        local currentCharacter = LocalPlayer.Character
-        local currentRoot = currentCharacter and currentCharacter:FindFirstChild("HumanoidRootPart")
-        local currentHum = currentCharacter and currentCharacter:FindFirstChildOfClass("Humanoid")
-
-        if not currentCharacter or not currentRoot or not swimVelocity or not swimGyro then return end
+        local currentHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        local currentRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if not currentHum or not currentRoot then return end
 
         currentHum:ChangeState(Enum.HumanoidStateType.Swimming)
-        swimGyro.cframe = Camera.CFrame
 
         local moveDir = Vector3.new()
-        local moveVector = currentHum and currentHum.MoveDirection or Vector3.new()
-
+        local moveVector = currentHum.MoveDirection
         if moveVector.Magnitude > 0 then
             local camCF = Camera.CFrame
             local flatMove = camCF:VectorToObjectSpace(moveVector)
@@ -1658,23 +1599,21 @@ local function startSwim()
             moveDir = moveDir + (Camera.CFrame.RightVector * joystickDir.X) + (Camera.CFrame.LookVector * -joystickDir.Y)
         end
 
-        if moveDir.Magnitude > 0 then
-            swimVelocity.Velocity = moveDir.Unit * hum.WalkSpeed
+        local waterParts = getWorkspaceWaterParts()
+        if #waterParts > 0 then
+            currentRoot.AssemblyLinearVelocity = moveDir.Magnitude > 0 and (moveDir.Unit * currentHum.WalkSpeed) or Vector3.new(0, -2, 0)
         else
-            swimVelocity.Velocity = Vector3.new(0, 0, 0)
+            currentRoot.AssemblyLinearVelocity = moveDir.Magnitude > 0 and (moveDir.Unit * currentHum.WalkSpeed) or Vector3.new(0, 0, 0)
         end
     end)
 end
 
 local function stopSwim()
     if swimConnection then swimConnection:Disconnect() swimConnection = nil end
-    if swimGyro then swimGyro:Destroy() swimGyro = nil end
-    if swimVelocity then swimVelocity:Destroy() swimVelocity = nil end
-
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum then 
+        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+        hum:ChangeState(Enum.HumanoidStateType.GettingUp) 
     end
 end
 
@@ -1703,11 +1642,8 @@ end
 local function startInfJump()
     if infJumpConnection then infJumpConnection:Disconnect() end
     infJumpConnection = UserInputService.JumpRequest:Connect(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        if hum then
-            hum:ChangeState(Enum.HumanoidStateType.Jumping)
-        end
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
     end)
 end
 
@@ -1719,11 +1655,7 @@ local function updateJoystickPos(inputPos)
     local center = joystickFrame.AbsolutePosition + (joystickFrame.AbsoluteSize / 2)
     local delta = inputPos - center
     local maxRadius = joystickFrame.AbsoluteSize.X / 2
-    local dist = delta.Magnitude
-
-    if dist > maxRadius then
-        delta = delta.Unit * maxRadius
-    end
+    if delta.Magnitude > maxRadius then delta = delta.Unit * maxRadius end
 
     joystickThumb.Position = UDim2.new(0.5, delta.X - 25, 0.5, delta.Y - 25)
     joystickDir = Vector2.new(delta.X / maxRadius, -delta.Y / maxRadius)
@@ -1755,13 +1687,11 @@ local function startJoystick()
     if joystickConnection then joystickConnection:Disconnect() end
     joystickConnection = RunService.RenderStepped:Connect(function()
         if not joystickEnabled or flyEnabled or swimEnabled then return end
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum and joystickDir.Magnitude > 0 then
             local camCF = Camera.CFrame
-            local moveDir = (camCF.RightVector * joystickDir.X) + (camCF.LookVector * joystickDir.Y)
-            moveDir = Vector3.new(moveDir.X, 0, moveDir.Z).Unit
-            hum:Move(moveDir, false)
+            local moveDir = Vector3.new(camCF.RightVector.X * joystickDir.X + camCF.LookVector.X * joystickDir.Y, 0, camCF.RightVector.Z * joystickDir.X + camCF.LookVector.Z * joystickDir.Y)
+            if moveDir.Magnitude > 0 then hum:Move(moveDir.Unit, false) end
         end
     end)
 end
@@ -1776,19 +1706,10 @@ end
 
 local function startCameraZoom()
     if cameraZoomConnection then cameraZoomConnection:Disconnect() end
-    
-    local function applyZoom()
-        LocalPlayer.CameraMaxZoomDistance = 999999
-        LocalPlayer.CameraMinZoomDistance = 0.5
-        LocalPlayer.CameraMode = Enum.CameraMode.Classic
-    end
-    
-    applyZoom()
+    LocalPlayer.CameraMaxZoomDistance, LocalPlayer.CameraMinZoomDistance, LocalPlayer.CameraMode = 999999, 0.5, Enum.CameraMode.Classic
     cameraZoomConnection = RunService.Heartbeat:Connect(function()
-        if cameraZoomEnabled then
-            if LocalPlayer.CameraMaxZoomDistance ~= 999999 then
-                LocalPlayer.CameraMaxZoomDistance = 999999
-            end
+        if cameraZoomEnabled and LocalPlayer.CameraMaxZoomDistance ~= 999999 then
+            LocalPlayer.CameraMaxZoomDistance = 999999
         end
     end)
 end
@@ -1805,74 +1726,47 @@ local function startPausedScreenRemoval()
     pausedScreenConnection = RunService.Heartbeat:Connect(function()
         pcall(function()
             local robloxGui = CoreGui:FindFirstChild("RobloxGui")
-            if robloxGui then
-                local modules = robloxGui:FindFirstChild("Modules")
-                if modules then
-                    local pauseNotification = modules:FindFirstChild("NetworkPauseNotification")
-                    if pauseNotification then
-                        pauseNotification:Destroy()
-                    end
-                end
+            if robloxGui and robloxGui:FindFirstChild("Modules") and robloxGui.Modules:FindFirstChild("NetworkPauseNotification") then
+                robloxGui.Modules.NetworkPauseNotification:Destroy()
             end
             local directPause = CoreGui:FindFirstChild("RobloxNetworkPauseNotification")
-            if directPause then
-                directPause:Destroy()
-            end
+            if directPause then directPause:Destroy() end
         end)
     end)
 end
-
-local function stopPausedScreenRemoval()
-    if pausedScreenConnection then pausedScreenConnection:Disconnect() pausedScreenConnection = nil end
-end
-
 startPausedScreenRemoval()
 
 local function startNoTexture()
     if noTextureConnection then noTextureConnection:Disconnect() end
-    
-    local function cleanPart(obj)
-        if obj:IsA("BasePart") then
-            obj.Material = Enum.Material.SmoothPlastic
-            obj.Reflectance = 0
-        elseif obj:IsA("Decal") or obj:IsA("Texture") then
-            obj.Transparency = 1
-        elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then
-            obj.Enabled = false
-        end
-    end
-
     pcall(function()
         for _, obj in ipairs(Workspace:GetDescendants()) do
-            cleanPart(obj)
+            if obj:IsA("BasePart") then obj.Material, obj.Reflectance = Enum.Material.SmoothPlastic, 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then obj.Transparency = 1
+            elseif obj:IsA("ParticleEmitter") or obj:IsA("Trail") or obj:IsA("Fire") or obj:IsA("Smoke") or obj:IsA("Sparkles") then obj.Enabled = false end
         end
-        Lighting.GlobalShadows = false
-        Lighting.FogEnd = 9e9
+        Lighting.GlobalShadows, Lighting.FogEnd = false, 9e9
     end)
-    
     noTextureConnection = Workspace.DescendantAdded:Connect(function(obj)
-        pcall(function() cleanPart(obj) end)
+        pcall(function()
+            if obj:IsA("BasePart") then obj.Material, obj.Reflectance = Enum.Material.SmoothPlastic, 0
+            elseif obj:IsA("Decal") or obj:IsA("Texture") then obj.Transparency = 1 end
+        end)
     end)
 end
 
 local function stopNoTexture()
     if noTextureConnection then noTextureConnection:Disconnect() noTextureConnection = nil end
-    Lighting.GlobalShadows = originalLighting.GlobalShadows
-    Lighting.FogEnd = originalLighting.FogEnd
+    Lighting.GlobalShadows, Lighting.FogEnd = originalLighting.GlobalShadows, originalLighting.FogEnd
 end
 
 local noFogConnection
 local function startNoFog()
     if noFogConnection then noFogConnection:Disconnect() end
     noFogConnection = RunService.Heartbeat:Connect(function()
-        if not noFogEnabled then return end
         pcall(function()
-            Lighting.FogEnd = 9e9
-            Lighting.FogStart = 9e9
+            Lighting.FogEnd, Lighting.FogStart = 9e9, 9e9
             for _, child in ipairs(Lighting:GetChildren()) do
-                if child:IsA("Atmosphere") then
-                    child.Density = 0
-                end
+                if child:IsA("Atmosphere") then child.Density = 0 end
             end
         end)
     end)
@@ -1880,115 +1774,35 @@ end
 
 local function stopNoFog()
     if noFogConnection then noFogConnection:Disconnect() end
-    Lighting.FogEnd = originalLighting.FogEnd
-    Lighting.FogStart = originalLighting.FogStart
+    Lighting.FogEnd, Lighting.FogStart = originalLighting.FogEnd, originalLighting.FogStart
 end
 
 local fullBrightConnection
 local function startFullBright()
     if fullBrightConnection then fullBrightConnection:Disconnect() end
     fullBrightConnection = RunService.Heartbeat:Connect(function()
-        if not fullBrightEnabled then return end
         pcall(function()
-            Lighting.Brightness = 2
-            Lighting.ClockTime = 14
-            Lighting.GlobalShadows = false
-            Lighting.OutdoorAmbient = Color3.fromRGB(255, 255, 255)
+            Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.OutdoorAmbient = 2, 14, false, Color3.fromRGB(255, 255, 255)
         end)
     end)
 end
 
 local function stopFullBright()
     if fullBrightConnection then fullBrightConnection:Disconnect() end
-    Lighting.Brightness = originalLighting.Brightness
-    Lighting.ClockTime = originalLighting.ClockTime
-    Lighting.GlobalShadows = originalLighting.GlobalShadows
-    Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+    Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.OutdoorAmbient = originalLighting.Brightness, originalLighting.ClockTime, originalLighting.GlobalShadows, originalLighting.OutdoorAmbient
 end
 
-local raycastParams = RaycastParams.new()
-raycastParams.FilterType = Enum.RaycastFilterType.Exclude
-
-RunService.Heartbeat:Connect(function(dt)
-    local character = LocalPlayer.Character
-    local rootPart = character and character:FindFirstChild("HumanoidRootPart")
-    
-    if not character or not rootPart then return end
-
-    if hoverEnabled and not flyEnabled and not swimEnabled then
-        raycastParams.FilterDescendantsInstances = {character}
-        local rayResult = Workspace:Raycast(rootPart.Position + Vector3.new(0, 3.8, 0), Vector3.new(0, -150, 0), raycastParams)
-        if rayResult then
-            local targetHeight = rayResult.Position.Y + 33.0
-            if rootPart.Position.Y < targetHeight or rootPart.AssemblyLinearVelocity.Y < 1 then
-                rootPart.CFrame = CFrame.new(rootPart.Position.X, targetHeight, rootPart.Position.Z) * (rootPart.CFrame - rootPart.CFrame.Position)
-                rootPart.AssemblyLinearVelocity = Vector3.new(rootPart.AssemblyLinearVelocity.X, 0, rootPart.AssemblyLinearVelocity.Z)
-            end
-        end
-    end
-end)
-
-LocalPlayer.CharacterAdded:Connect(function()
-    if flyEnabled then flyEnabled = false stopFly() flyButton.Text = "Fly Mode: OFF" flyButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45) end
-    if swimEnabled then swimEnabled = false stopSwim() swimButton.Text = "Swim Mode: OFF" swimButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45) end
-    if noclipEnabled then startNoclip() end
-    if infJumpEnabled then startInfJump() end
-    if joystickEnabled then startJoystick() end
-    if cameraZoomEnabled then startCameraZoom() end
-end)
-
-local isMinimized = false
-local normalSize = UDim2.new(0, 600, 0, 670)
-local minimizedSize = UDim2.new(0, 600, 0, 35)
-
-minimizeButton.MouseButton1Click:Connect(function()
-    isMinimized = not isMinimized
-    categoryBar.Visible = not isMinimized
-    espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
-    combatContainer.Visible = not isMinimized and (combatTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
-    playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
-    mainWindow.Size = isMinimized and minimizedSize or normalSize
-    minimizeButton.Text = isMinimized and "+" or "-"
-end)
-
-closeButton.MouseButton1Click:Connect(function() warningOverlay.Visible = true end)
-cancelCloseBtn.MouseButton1Click:Connect(function() warningOverlay.Visible = false end)
-
-confirmCloseBtn.MouseButton1Click:Connect(function()
-    if flyEnabled then flyEnabled = false stopFly() end
-    if swimEnabled then swimEnabled = false stopSwim() end
-    if noclipEnabled then noclipEnabled = false stopNoclip() end
-    if infJumpEnabled then infJumpEnabled = false stopInfJump() end
-    if joystickEnabled then joystickEnabled = false stopJoystick() end
-    if cameraZoomEnabled then cameraZoomEnabled = false stopCameraZoom() end
-    if pausedScreenEnabled then stopPausedScreenRemoval() end
-    if noTextureEnabled then stopNoTexture() end
-    if noFogEnabled then stopNoFog() end
-    if fullBrightEnabled then stopFullBright() end
-    screenGui:Destroy()
-end)
-
+-- Button Bindings
 humEspButton.MouseButton1Click:Connect(function()
     humEspEnabled = not humEspEnabled
     humEspButton.Text = humEspEnabled and "Precise 3D Box ESP (+ Highlight + Mass kg): ON" or "Precise 3D Box ESP (+ Highlight + Mass kg): OFF"
     humEspButton.BackgroundColor3 = humEspEnabled and Color3.fromRGB(25, 75, 95) or Color3.fromRGB(28, 35, 45)
-    
     if not humEspEnabled then
         for _, data in pairs(espCache) do
-            if data.Highlight then
-                data.Highlight.Enabled = false
-            end
-            if data.BoxLines then
-                for _, line in ipairs(data.BoxLines) do
-                    line.Visible = false
-                end
-            end
-            if data.NameLabel then
-                data.NameLabel.Visible = false
-            end
-            if data.HealthBarBg then
-                data.HealthBarBg.Visible = false
-            end
+            if data.Highlight then data.Highlight.Enabled = false end
+            for _, line in ipairs(data.BoxLines) do line.Visible = false end
+            if data.NameLabel then data.NameLabel.Visible = false end
+            if data.HealthBarBg then data.HealthBarBg.Visible = false end
         end
     end
 end)
@@ -1997,62 +1811,23 @@ pausedScreenButton.MouseButton1Click:Connect(function()
     pausedScreenEnabled = not pausedScreenEnabled
     pausedScreenButton.Text = pausedScreenEnabled and "Remove Gameplay Paused Screen: ON" or "Remove Gameplay Paused Screen: OFF"
     pausedScreenButton.BackgroundColor3 = pausedScreenEnabled and Color3.fromRGB(25, 75, 50) or Color3.fromRGB(28, 35, 45)
-    if pausedScreenEnabled then startPausedScreenRemoval() else stopPausedScreenRemoval() end
+    if pausedScreenEnabled then startPausedScreenRemoval() else if pausedScreenConnection then pausedScreenConnection:Disconnect() end end
 end)
 
 noTextureButton.MouseButton1Click:Connect(function()
     if noTextureEnabled then
-        noTextureEnabled = false
-        noTextureClickStep = 0
-        noTextureButton.Text = "No Texture: OFF"
-        noTextureButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
+        noTextureEnabled, noTextureClickStep = false, 0
+        noTextureButton.Text, noTextureButton.BackgroundColor3 = "No Texture: OFF", Color3.fromRGB(28, 35, 45)
         stopNoTexture()
     else
         noTextureClickStep = noTextureClickStep + 1
-        noTextureTick = tick()
-
-        if noTextureClickStep == 1 then
-            noTextureButton.Text = "Are you sure?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(25, 65, 95)
-        elseif noTextureClickStep == 2 then
-            noTextureButton.Text = "Are you REALLY sure?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(30, 80, 120)
-        elseif noTextureClickStep == 3 then
-            noTextureButton.Text = "Are you REALLY REALLY SURE?"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(35, 100, 150)
-        elseif noTextureClickStep >= 4 then
-            noTextureEnabled = true
-            noTextureClickStep = 0
-            noTextureButton.Text = "No Texture: ON"
-            noTextureButton.BackgroundColor3 = Color3.fromRGB(25, 75, 110)
+        if noTextureClickStep == 1 then noTextureButton.Text, noTextureButton.BackgroundColor3 = "Are you sure?", Color3.fromRGB(25, 65, 95)
+        elseif noTextureClickStep == 2 then noTextureButton.Text, noTextureButton.BackgroundColor3 = "Are you REALLY sure?", Color3.fromRGB(30, 80, 120)
+        elseif noTextureClickStep >= 3 then
+            noTextureEnabled, noTextureClickStep = true, 0
+            noTextureButton.Text, noTextureButton.BackgroundColor3 = "No Texture: ON", Color3.fromRGB(25, 75, 110)
             startNoTexture()
-            return
         end
-
-        local currentStepToken = noTextureClickStep
-        task.spawn(function()
-            task.wait(1)
-            if not noTextureEnabled and noTextureClickStep == currentStepToken and (tick() - noTextureTick) >= 1 then
-                for i = 1, 10 do
-                    if noTextureClickStep ~= currentStepToken or noTextureEnabled then break end
-                    noTextureButton.TextTransparency = i / 10
-                    noTextureButton.TextColor3 = Color3.fromRGB(
-                        math.floor(180 * (1 - (i/10 * 0.5))),
-                        math.floor(210 * (1 - (i/10 * 0.5))),
-                        math.floor(255 * (1 - (i/10 * 0.5)))
-                    )
-                    task.wait(0.04)
-                end
-
-                if noTextureClickStep == currentStepToken and not noTextureEnabled then
-                    noTextureClickStep = 0
-                    noTextureButton.Text = "No Texture: OFF"
-                    noTextureButton.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
-                    noTextureButton.TextTransparency = 0
-                    noTextureButton.TextColor3 = Color3.fromRGB(180, 210, 255)
-                end
-            end
-        end)
     end
 end)
 
@@ -2107,7 +1882,7 @@ end)
 joystickButton.MouseButton1Click:Connect(function()
     joystickEnabled = not joystickEnabled
     joystickButton.Text = joystickEnabled and "On-Screen Joystick: ON" or "On-Screen Joystick: OFF"
-    joystickButton.BackgroundColor3 = joystickEnabled and Color3.fromRGB(35, 75, 110) or Color3.fromRGB(28, 35, movingUp and 0 or 45)
+    joystickButton.BackgroundColor3 = joystickEnabled and Color3.fromRGB(35, 75, 110) or Color3.fromRGB(28, 35, 45)
     if joystickEnabled then startJoystick() else stopJoystick() end
 end)
 
@@ -2118,24 +1893,17 @@ cameraZoomButton.MouseButton1Click:Connect(function()
     if cameraZoomEnabled then startCameraZoom() else stopCameraZoom() end
 end)
 
-local dragging = false
-local dragInput, dragStart, startPos
-
+-- UI Window Dragging & Minimizing
+local dragging, dragInput, dragStart, startPos = false, nil, nil, nil
 topBar.InputBegan:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-        dragging = true
-        dragStart = input.Position
-        startPos = mainWindow.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then dragging = false end
-        end)
+        dragging, dragStart, startPos = true, input.Position, mainWindow.Position
+        input.Changed:Connect(function() if input.UserInputState == Enum.UserInputState.End then dragging = false end end)
     end
 end)
 
 topBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
-        dragInput = input
-    end
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
 end)
 
 UserInputService.InputChanged:Connect(function()
@@ -2143,4 +1911,27 @@ UserInputService.InputChanged:Connect(function()
         local delta = dragInput.Position - dragStart
         mainWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
     end
+end)
+
+local isMinimized = false
+minimizeButton.MouseButton1Click:Connect(function()
+    isMinimized = not isMinimized
+    categoryBar.Visible = not isMinimized
+    espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    combatContainer.Visible = not isMinimized and (combatTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    teleportContainer.Visible = not isMinimized and (teleportTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
+    mainWindow.Size = isMinimized and UDim2.new(0, 600, 0, 35) or UDim2.new(0, 600, 0, 670)
+    minimizeButton.Text = isMinimized and "+" or "-"
+end)
+
+closeButton.MouseButton1Click:Connect(function() warningOverlay.Visible = true end)
+cancelCloseBtn.MouseButton1Click:Connect(function() warningOverlay.Visible = false end)
+confirmCloseBtn.MouseButton1Click:Connect(function()
+    stopFly() stopSwim() stopNoclip() stopInfJump() stopJoystick() stopCameraZoom()
+    if pausedScreenConnection then pausedScreenConnection:Disconnect() end
+    if noTextureEnabled then stopNoTexture() end
+    if noFogConnection then noFogConnection:Disconnect() end
+    if fullBrightConnection then fullBrightConnection:Disconnect() end
+    screenGui:Destroy()
 end)
