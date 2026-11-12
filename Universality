@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau (Client Executor / LocalScript)
--- Optimized: Native camera subject binding for OmniFling, restoring full scroll zoom, camera controls, native fluid swimming, and fixed movement predictor toggle switch.
+-- Optimized: Full kinetic override, multi-axis rotational force multipliers, and instantaneous target ejection.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -52,7 +52,7 @@ titleLabel.Size = UDim2.new(1, -260, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "Interface Hub (OmniFling Hub - Fixed Predictor Toggle)"
+titleLabel.Text = "Interface Hub (OmniFling Hub - Maximum Kinetic Spin)"
 titleLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -158,7 +158,7 @@ local function createTabContainer(name, canvasHeight)
 end
 
 local espContainer = createTabContainer("ESPContainer", 850)
-local combatContainer = createTabContainer("CombatContainer", 850)
+local combatContainer = createTabContainer("CombatContainer", 950)
 local playerContainer = createTabContainer("PlayerContainer", 920)
 
 espContainer.Visible = true
@@ -238,6 +238,49 @@ local function createButton(parent, text, color, order)
     return btn
 end
 
+local function createNumberInputRow(parent, labelText, defaultValue, accentColor, order)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 40)
+    container.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
+    container.BackgroundTransparency = 0.3
+    container.BorderSizePixel = 0
+    container.LayoutOrder = order
+    container.Parent = parent
+
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 4)
+    corner.Parent = container
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.6, 0, 1, 0)
+    label.Position = UDim2.new(0, 12, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.Text = labelText
+    label.TextColor3 = Color3.fromRGB(160, 225, 255)
+    label.TextSize = 13
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0, 100, 0, 28)
+    box.Position = UDim2.new(1, -110, 0.5, -14)
+    box.BackgroundColor3 = Color3.fromRGB(18, 22, 29)
+    box.BorderSizePixel = 0
+    box.Font = Enum.Font.GothamBold
+    box.Text = tostring(defaultValue)
+    box.TextColor3 = accentColor
+    box.TextSize = 14
+    box.ClearTextOnFocus = false
+    box.Parent = container
+
+    local boxCorner = Instance.new("UICorner")
+    boxCorner.CornerRadius = UDim.new(0, 4)
+    boxCorner.Parent = box
+
+    return box
+end
+
 -- Tab Buttons
 local humEspButton = createButton(espContainer, "Precise 3D Box ESP (+ Highlight + Mass kg): OFF", Color3.fromRGB(100, 235, 255), 1)
 local pausedScreenButton = createButton(espContainer, "Remove Gameplay Paused Screen: ON", Color3.fromRGB(120, 255, 215), 2)
@@ -247,6 +290,8 @@ local fullBrightButton = createButton(espContainer, "Full Bright: OFF", Color3.f
 
 local targetNearestEnabled = false
 local movementPredictorEnabled = false
+local spinSpeed = 500
+local orbitSpeed = 500
 
 local flingStatusLabel = Instance.new("TextLabel")
 flingStatusLabel.Size = UDim2.new(1, 0, 0, 25)
@@ -266,6 +311,27 @@ local currentDirIndex = 1
 local flingDirButton = createButton(combatContainer, "OmniFling Priority: Random (Default)", Color3.fromRGB(140, 180, 255), 3)
 local movementPredictorBtn = createButton(combatContainer, "Movement Predictor: OFF", Color3.fromRGB(120, 255, 180), 4)
 
+local spinSpeedBox = createNumberInputRow(combatContainer, "Fling Spin Speed:", spinSpeed, Color3.fromRGB(255, 150, 180), 5)
+local orbitSpeedBox = createNumberInputRow(combatContainer, "Fling Orbit Speed:", orbitSpeed, Color3.fromRGB(140, 220, 255), 6)
+
+spinSpeedBox.FocusLost:Connect(function()
+    local val = tonumber(spinSpeedBox.Text)
+    if val then
+        spinSpeed = val
+    else
+        spinSpeedBox.Text = tostring(spinSpeed)
+    end
+end)
+
+orbitSpeedBox.FocusLost:Connect(function()
+    local val = tonumber(orbitSpeedBox.Text)
+    if val then
+        orbitSpeed = val
+    else
+        orbitSpeedBox.Text = tostring(orbitSpeed)
+    end
+end)
+
 local dirDropdownFrame = Instance.new("Frame")
 dirDropdownFrame.Name = "DirDropdownFrame"
 dirDropdownFrame.Size = UDim2.new(1, 0, 0, 82)
@@ -274,7 +340,7 @@ dirDropdownFrame.BackgroundTransparency = 0.1
 dirDropdownFrame.BorderSizePixel = 0
 dirDropdownFrame.Visible = false
 dirDropdownFrame.ZIndex = 15
-dirDropdownFrame.LayoutOrder = 5
+dirDropdownFrame.LayoutOrder = 7
 dirDropdownFrame.Parent = combatContainer
 
 local dirDropCorner = Instance.new("UICorner")
@@ -332,7 +398,7 @@ searchContainer.Size = UDim2.new(1, 0, 0, 35)
 searchContainer.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
 searchContainer.BackgroundTransparency = 0.3
 searchContainer.BorderSizePixel = 0
-searchContainer.LayoutOrder = 6
+searchContainer.LayoutOrder = 8
 searchContainer.Parent = combatContainer
 
 local searchCorner = Instance.new("UICorner")
@@ -356,7 +422,7 @@ searchBox.Parent = searchContainer
 local dualListContainer = Instance.new("Frame")
 dualListContainer.Size = UDim2.new(1, 0, 0, 230)
 dualListContainer.BackgroundTransparency = 1
-dualListContainer.LayoutOrder = 7
+dualListContainer.LayoutOrder = 9
 dualListContainer.Parent = combatContainer
 
 local dualListLayout = Instance.new("UIListLayout")
@@ -431,7 +497,7 @@ entityScrollFrame.Parent = entityListWrapper
 local flingActionContainer = Instance.new("Frame")
 flingActionContainer.Size = UDim2.new(1, 0, 0, 40)
 flingActionContainer.BackgroundTransparency = 1
-flingActionContainer.LayoutOrder = 8
+flingActionContainer.LayoutOrder = 10
 flingActionContainer.Parent = combatContainer
 
 local startFlingBtn = Instance.new("TextButton")
@@ -468,7 +534,7 @@ stopCorner.Parent = stopFlingBtn
 local selectToggleContainer = Instance.new("Frame")
 selectToggleContainer.Size = UDim2.new(1, 0, 0, 32)
 selectToggleContainer.BackgroundTransparency = 1
-selectToggleContainer.LayoutOrder = 9
+selectToggleContainer.LayoutOrder = 11
 selectToggleContainer.Parent = combatContainer
 
 local selectAllBtn = Instance.new("TextButton")
@@ -622,44 +688,7 @@ local hoverButton = createButton(playerContainer, "30 Studs Ground Hover: OFF", 
 local cameraZoomButton = createButton(playerContainer, "Enable 3rd person: OFF", Color3.fromRGB(190, 190, 255), 3)
 local flyButton = createButton(playerContainer, "Fly Mode: OFF", Color3.fromRGB(100, 255, 230), 4)
 
-local speedContainer = Instance.new("Frame")
-speedContainer.Size = UDim2.new(1, 0, 0, 40)
-speedContainer.BackgroundColor3 = Color3.fromRGB(28, 35, 45)
-speedContainer.BackgroundTransparency = 0.3
-speedContainer.BorderSizePixel = 0
-speedContainer.LayoutOrder = 5
-speedContainer.Parent = playerContainer
-
-local speedCorner = Instance.new("UICorner")
-speedCorner.CornerRadius = UDim.new(0, 4)
-speedCorner.Parent = speedContainer
-
-local speedLabel = Instance.new("TextLabel")
-speedLabel.Size = UDim2.new(0.6, 0, 1, 0)
-speedLabel.Position = UDim2.new(0, 12, 0, 0)
-speedLabel.BackgroundTransparency = 1
-speedLabel.Font = Enum.Font.GothamSemibold
-speedLabel.Text = "Fly Speed Amount:"
-speedLabel.TextColor3 = Color3.fromRGB(160, 225, 255)
-speedLabel.TextSize = 13
-speedLabel.TextXAlignment = Enum.TextXAlignment.Left
-speedLabel.Parent = speedContainer
-
-local speedBox = Instance.new("TextBox")
-speedBox.Size = UDim2.new(0, 100, 0, 28)
-speedBox.Position = UDim2.new(1, -110, 0.5, -14)
-speedBox.BackgroundColor3 = Color3.fromRGB(18, 22, 29)
-speedBox.BorderSizePixel = 0
-speedBox.Font = Enum.Font.GothamBold
-speedBox.Text = "50"
-speedBox.TextColor3 = Color3.fromRGB(110, 255, 230)
-speedBox.TextSize = 14
-speedBox.ClearTextOnFocus = false
-speedBox.Parent = speedContainer
-
-local boxCorner2 = Instance.new("UICorner")
-boxCorner2.CornerRadius = UDim.new(0, 4)
-boxCorner2.Parent = speedBox
+local speedBox = createNumberInputRow(playerContainer, "Fly Speed Amount:", 50, Color3.fromRGB(110, 255, 230), 5)
 
 local infJumpButton = createButton(playerContainer, "Infinite Jump: OFF", Color3.fromRGB(110, 255, 210), 6)
 local noclipButton = createButton(playerContainer, "Noclip: OFF", Color3.fromRGB(180, 200, 255), 7)
@@ -1166,8 +1195,8 @@ local function GetModelMass(model)
     return math.max(totalMass, 1)
 end
 
--- ================= NATIVE CAMERA SUBJECT TRACKING FOR OMNIFLING =================
-local oscillationCycleCounter = 0
+-- ================= NATIVE CAMERA SUBJECT TRACKING & MAXIMUM VELOCITY SPIN-FLING =================
+local orbitAngleCounter = 0
 
 local function SkidSelectionAxisFlingModel(TargetData)
     local Character = LocalPlayer.Character
@@ -1185,7 +1214,6 @@ local function SkidSelectionAxisFlingModel(TargetData)
     local targetPart = TRootPart or THead or Handle or TCharacter:FindFirstChildWhichIsA("BasePart")
     
     if targetPart then
-        -- Set native camera subject and unlock infinite zoom distance
         Camera.CameraType = Enum.CameraType.Custom
         LocalPlayer.CameraMaxZoomDistance = 999999
         Camera.CameraSubject = targetPart
@@ -1197,56 +1225,44 @@ local function SkidSelectionAxisFlingModel(TargetData)
         end
         
         if THumanoid and THumanoid.Sit then return end
-        if not TCharacter:FindFirstChildWhichIsA("BasePart") then return end
+        local baseTargetPart = TCharacter:FindFirstChildWhichIsA("BasePart")
+        if not baseTargetPart then return end
         
         local exponentialMultiplier = math.clamp(math.pow(GetModelMass(TCharacter), 1.3), 1, 50)
-        local predictedPos = TRootPart and TRootPart.Position or RootPart.Position
         
-        local FPosAxis = function(BasePart, frontBackStep)
-            local lookVector = RootPart.CFrame.LookVector
-            local rightVector = RootPart.CFrame.RightVector
+        local FPosAxis = function(BasePart)
             local selectedMode = FlingDirections[currentDirIndex]
-            
             local velocityTarget = Vector3.new()
-            local cframeOffset = Vector3.new()
-            local sideOffset = (math.random() > 0.5 and 1 or -1) * 0.5
-            local verticalOffset = (frontBackStep > 0 and 0.5 or -0.5)
-
-            oscillationCycleCounter = oscillationCycleCounter + 1
-            local dynamicFrontBack = 0
-            if oscillationCycleCounter % 2 ~= 0 then
-                local actualTargetPos = TRootPart and TRootPart.Position or BasePart.Position
-                local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new()
-                
-                -- Only apply prediction offset when movementPredictorEnabled is true
-                if movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
-                    actualTargetPos = actualTargetPos + (targetVelocity * 0.35)
-                    predictedPos = predictedPos:Lerp(actualTargetPos + (targetVelocity * 0.5), 0.3)
-                    dynamicFrontBack = frontBackStep + (targetVelocity.Magnitude * 0.2)
-                else
-                    predictedPos = actualTargetPos
-                    dynamicFrontBack = frontBackStep
-                end
+            
+            orbitAngleCounter = orbitAngleCounter + orbitSpeed
+            local orbitRadius = 1.2
+            local offsetX = math.cos(orbitAngleCounter) * orbitRadius
+            local offsetZ = math.sin(orbitAngleCounter) * orbitRadius
+            
+            local actualTargetPos = TRootPart and TRootPart.Position or BasePart.Position
+            local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new()
+            
+            -- Velocity-scaled dynamic prediction math
+            local predictedPos = actualTargetPos
+            if movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
+                local dist = (RootPart.Position - actualTargetPos).Magnitude
+                local dynamicLead = math.clamp(dist / 50 * 0.4, 0.1, 0.5) * math.min(targetVelocity.Magnitude / 16, 2)
+                predictedPos = actualTargetPos + (targetVelocity * dynamicLead)
             end
-
-            local horizontalStagger = (rightVector * sideOffset) + (lookVector * dynamicFrontBack)
-
+            
+            local orbitalOffset = Vector3.new(offsetX, 0.5, offsetZ)
+            local targetDestPos = predictedPos + orbitalOffset
+            
             if selectedMode == "Upward" then
-                velocityTarget = (Vector3.new(0, frontBackStep > 0 and 1.5e9 or -1.5e9, 0) + horizontalStagger * 2.5e7) * exponentialMultiplier
-                cframeOffset = Vector3.new(0, verticalOffset, 0) + horizontalStagger
+                velocityTarget = Vector3.new(0, 1.5e9, 0) * exponentialMultiplier
             elseif selectedMode == "Downward" then
-                velocityTarget = (Vector3.new(0, frontBackStep > 0 and -1.5e9 or 1.5e9, 0) + horizontalStagger * 2.5e7) * exponentialMultiplier
-                cframeOffset = Vector3.new(0, verticalOffset, 0) + horizontalStagger
+                velocityTarget = Vector3.new(0, -1.5e9, 0) * exponentialMultiplier
             elseif selectedMode == "Random" then
                 velocityTarget = Vector3.new(math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9))
-                cframeOffset = Vector3.new(sideOffset, verticalOffset, dynamicFrontBack)
             end
             
-            local flattenedTargetPos = Vector3.new(predictedPos.X, BasePart.Position.Y, predictedPos.Z)
-            local dirToTarget = (flattenedTargetPos - BasePart.Position)
-            dirToTarget = dirToTarget.Magnitude > 0.01 and dirToTarget.Unit or Vector3.new(0, 0, -1)
-
-            local faceCFrame = CFrame.lookAt(BasePart.Position + cframeOffset, BasePart.Position + cframeOffset + dirToTarget) * CFrame.Angles(0, math.rad(120) + math.sin(tick() * 65) * 1.2, 0)
+            local maxSpinAngle = tick() * spinSpeed
+            local faceCFrame = CFrame.new(targetDestPos) * CFrame.Angles(maxSpinAngle, maxSpinAngle * 1.5, maxSpinAngle * 0.8)
 
             RootPart.CFrame = faceCFrame
             Character:SetPrimaryPartCFrame(faceCFrame)
@@ -1258,9 +1274,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
             local Time = tick()
             repeat
                 if RootPart and THumanoid then
-                    FPosAxis(BasePart, 6.0)
-                    task.wait()
-                    FPosAxis(BasePart, -6.0)
+                    FPosAxis(BasePart)
                     task.wait()
                 end
             until Time + 2 < tick() or not FlingActive
@@ -1276,9 +1290,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
         Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
         
-        if TRootPart then SFBasePart(TRootPart)
-        elseif THead then SFBasePart(THead)
-        elseif Handle then SFBasePart(Handle) end
+        SFBasePart(targetPart)
         
         BV:Destroy()
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
