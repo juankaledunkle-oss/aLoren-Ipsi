@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau (Client Executor / LocalScript)
--- Optimized: Native camera subject binding for OmniFling, fluid swim, fixed predictor toggle, and updated 0.5 stud oscillation when predictor is OFF.
+-- Optimized: Native camera subject binding for OmniFling, restoring full scroll zoom, camera controls, native fluid swimming, and fixed movement predictor toggle switch.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -52,7 +52,7 @@ titleLabel.Size = UDim2.new(1, -260, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "Interface Hub (OmniFling Hub - 0.5 Stud Oscillation when Predictor OFF)"
+titleLabel.Text = "Interface Hub (OmniFling Hub - Fixed Predictor Toggle)"
 titleLabel.TextColor3 = Color3.fromRGB(160, 230, 255)
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -116,14 +116,14 @@ catLayout.Parent = categoryBar
 
 local function createTabButton(name, order)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.23, 0, 1, 0)
+    btn.Size = UDim2.new(0.32, 0, 1, 0)
     btn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     btn.BackgroundTransparency = 0.5
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(150, 220, 255)
-    btn.TextSize = 12
+    btn.TextSize = 13
     btn.LayoutOrder = order
     btn.Parent = categoryBar
 
@@ -136,7 +136,6 @@ end
 local espTabBtn = createTabButton("ESP & World", 1)
 local combatTabBtn = createTabButton("Combat", 2)
 local playerTabBtn = createTabButton("Player", 3)
-local teleportTabBtn = createTabButton("Teleport", 4)
 
 local function createTabContainer(name, canvasHeight)
     local frame = Instance.new("ScrollingFrame")
@@ -161,7 +160,6 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 850)
 local playerContainer = createTabContainer("PlayerContainer", 920)
-local teleportContainer = createTabContainer("TeleportContainer", 850)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
@@ -502,84 +500,6 @@ local daCorner = Instance.new("UICorner")
 daCorner.CornerRadius = UDim.new(0, 4)
 daCorner.Parent = deselectAllBtn
 
--- Teleport Tab Controls (.humanoids Teleportation)
-local tpHeaderLabel = Instance.new("TextLabel")
-tpHeaderLabel.Size = UDim2.new(1, 0, 0, 30)
-tpHeaderLabel.BackgroundTransparency = 1
-tpHeaderLabel.Font = Enum.Font.GothamBold
-tpHeaderLabel.Text = "Teleportation Utilities"
-tpHeaderLabel.TextColor3 = Color3.fromRGB(180, 230, 255)
-tpHeaderLabel.TextSize = 13
-tpHeaderLabel.TextXAlignment = Enum.TextXAlignment.Left
-tpHeaderLabel.LayoutOrder = 1
-tpHeaderLabel.Parent = teleportContainer
-
-local tpHumanoidsBtn = createButton(teleportContainer, "Teleport to .humanoids Container / Target", Color3.fromRGB(120, 255, 220), 2)
-
-local tpStatusLabel = Instance.new("TextLabel")
-tpStatusLabel.Size = UDim2.new(1, 0, 0, 30)
-tpStatusLabel.BackgroundTransparency = 1
-tpStatusLabel.Font = Enum.Font.GothamSemibold
-tpStatusLabel.Text = "Status: Ready to teleport"
-tpStatusLabel.TextColor3 = Color3.fromRGB(160, 200, 230)
-tpStatusLabel.TextSize = 12
-tpStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
-tpStatusLabel.LayoutOrder = 3
-tpStatusLabel.Parent = teleportContainer
-
-tpHumanoidsBtn.MouseButton1Click:Connect(function()
-    pcall(function()
-        local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not root then
-            tpStatusLabel.Text = "Status: Error - LocalPlayer character or RootPart missing!"
-            return
-        end
-
-        local targetPos = nil
-        for _, descendant in ipairs(Workspace:GetDescendants()) do
-            if descendant.Name:lower() == ".humanoids" or descendant.Name:lower() == "humanoids" then
-                if descendant:IsA("BasePart") then
-                    targetPos = descendant.Position
-                    break
-                elseif descendant:IsA("Model") or descendant:IsA("Folder") then
-                    local primary = descendant.PrimaryPart or descendant:FindFirstChildWhichIsA("BasePart")
-                    if primary then
-                        targetPos = primary.Position
-                        break
-                    end
-                end
-            end
-        end
-
-        if not targetPos then
-            local nearestDist = math.huge
-            for _, obj in ipairs(Workspace:GetDescendants()) do
-                if obj:IsA("Humanoid") then
-                    local m = obj.Parent
-                    local rp = m and (m:FindFirstChild("HumanoidRootPart") or m:FindFirstChildWhichIsA("BasePart"))
-                    if rp and m ~= char then
-                        local dist = (root.Position - rp.Position).Magnitude
-                        if dist < nearestDist then
-                            nearestDist = dist
-                            targetPos = rp.Position + Vector3.new(0, 3, 0)
-                        end
-                    end
-                end
-            end
-        end
-
-        if targetPos then
-            root.CFrame = CFrame.new(targetPos + Vector3.new(0, 5, 0))
-            tpStatusLabel.Text = "Status: Successfully teleported to .humanoids target!"
-            Notification("Teleport", "Teleported to .humanoids location successfully!", 2)
-        else
-            tpStatusLabel.Text = "Status: No .humanoids or targets found in workspace."
-            Notification("Teleport", "No .humanoids target found!", 2)
-        end
-    end)
-end)
-
 -- Player Stats Panel
 local statsPanel = Instance.new("Frame")
 statsPanel.Name = "StatsPanel"
@@ -788,7 +708,6 @@ local function switchTab(activeTab, activeBtn)
     espContainer.Visible = false
     combatContainer.Visible = false
     playerContainer.Visible = false
-    teleportContainer.Visible = false
     
     espTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     espTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
@@ -796,8 +715,6 @@ local function switchTab(activeTab, activeBtn)
     combatTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
     playerTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
-    teleportTabBtn.BackgroundColor3 = Color3.fromRGB(30, 36, 48)
-    teleportTabBtn.TextColor3 = Color3.fromRGB(150, 220, 255)
     
     activeTab.Visible = true
     activeBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
@@ -807,7 +724,6 @@ end
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
 combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, combatTabBtn) end)
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
-teleportTabBtn.MouseButton1Click:Connect(function() switchTab(teleportContainer, teleportTabBtn) end)
 
 local hoverEnabled = false
 local flyEnabled = false
@@ -1269,6 +1185,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
     local targetPart = TRootPart or THead or Handle or TCharacter:FindFirstChildWhichIsA("BasePart")
     
     if targetPart then
+        -- Set native camera subject and unlock infinite zoom distance
         Camera.CameraType = Enum.CameraType.Custom
         LocalPlayer.CameraMaxZoomDistance = 999999
         Camera.CameraSubject = targetPart
@@ -1301,6 +1218,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
                 local actualTargetPos = TRootPart and TRootPart.Position or BasePart.Position
                 local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new()
                 
+                -- Only apply prediction offset when movementPredictorEnabled is true
                 if movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
                     actualTargetPos = actualTargetPos + (targetVelocity * 0.35)
                     predictedPos = predictedPos:Lerp(actualTargetPos + (targetVelocity * 0.5), 0.3)
@@ -1338,13 +1256,11 @@ local function SkidSelectionAxisFlingModel(TargetData)
         
         local SFBasePart = function(BasePart)
             local Time = tick()
-            -- Set oscillation step size dynamically based on movementPredictorEnabled state (0.5 if OFF, 6.0 if ON)
-            local stepSize = movementPredictorEnabled and 6.0 or 0.5
             repeat
                 if RootPart and THumanoid then
-                    FPosAxis(BasePart, stepSize)
+                    FPosAxis(BasePart, 6.0)
                     task.wait()
-                    FPosAxis(BasePart, -stepSize)
+                    FPosAxis(BasePart, -6.0)
                     task.wait()
                 end
             until Time + 2 < tick() or not FlingActive
@@ -1920,7 +1836,6 @@ minimizeButton.MouseButton1Click:Connect(function()
     espContainer.Visible = not isMinimized and (espTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
     combatContainer.Visible = not isMinimized and (combatTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
     playerContainer.Visible = not isMinimized and (playerTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
-    teleportContainer.Visible = not isMinimized and (teleportTabBtn.BackgroundColor3 == Color3.fromRGB(35, 75, 110))
     mainWindow.Size = isMinimized and UDim2.new(0, 600, 0, 35) or UDim2.new(0, 600, 0, 670)
     minimizeButton.Text = isMinimized and "+" or "-"
 end)
