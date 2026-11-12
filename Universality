@@ -1338,7 +1338,6 @@ local function SkidSelectionAxisFlingModel(TargetData)
         
         local SFBasePart = function(BasePart)
             local Time = tick()
-            -- Set oscillation step size dynamically based on movementPredictorEnabled state (0.5 if OFF, 6.0 if ON)
             local stepSize = movementPredictorEnabled and 6.0 or 0.5
             repeat
                 if RootPart and THumanoid then
