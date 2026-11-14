@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau (Client Executor / LocalScript)
--- Optimized: Full kinetic override, multi-axis rotational force multipliers, and instantaneous target ejection.
+-- Optimized: Independent Select All / Deselect All buttons per list (Players vs Entities), cached fluid checks, 1e15 kinetic speed.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -158,8 +158,8 @@ local function createTabContainer(name, canvasHeight)
 end
 
 local espContainer = createTabContainer("ESPContainer", 850)
-local combatContainer = createTabContainer("CombatContainer", 950)
-local playerContainer = createTabContainer("PlayerContainer", 920)
+local combatContainer = createTabContainer("CombatContainer", 880)
+local playerContainer = createTabContainer("PlayerContainer", 960)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(35, 75, 110)
@@ -290,8 +290,8 @@ local fullBrightButton = createButton(espContainer, "Full Bright: OFF", Color3.f
 
 local targetNearestEnabled = false
 local movementPredictorEnabled = false
-local spinSpeed = 500
-local orbitSpeed = 500
+local spinSpeed = 999999999999999
+local orbitSpeed = 999999999999999
 
 local flingStatusLabel = Instance.new("TextLabel")
 flingStatusLabel.Size = UDim2.new(1, 0, 0, 25)
@@ -311,27 +311,6 @@ local currentDirIndex = 1
 local flingDirButton = createButton(combatContainer, "OmniFling Priority: Random (Default)", Color3.fromRGB(140, 180, 255), 3)
 local movementPredictorBtn = createButton(combatContainer, "Movement Predictor: OFF", Color3.fromRGB(120, 255, 180), 4)
 
-local spinSpeedBox = createNumberInputRow(combatContainer, "Fling Spin Speed:", spinSpeed, Color3.fromRGB(255, 150, 180), 5)
-local orbitSpeedBox = createNumberInputRow(combatContainer, "Fling Orbit Speed:", orbitSpeed, Color3.fromRGB(140, 220, 255), 6)
-
-spinSpeedBox.FocusLost:Connect(function()
-    local val = tonumber(spinSpeedBox.Text)
-    if val then
-        spinSpeed = val
-    else
-        spinSpeedBox.Text = tostring(spinSpeed)
-    end
-end)
-
-orbitSpeedBox.FocusLost:Connect(function()
-    local val = tonumber(orbitSpeedBox.Text)
-    if val then
-        orbitSpeed = val
-    else
-        orbitSpeedBox.Text = tostring(orbitSpeed)
-    end
-end)
-
 local dirDropdownFrame = Instance.new("Frame")
 dirDropdownFrame.Name = "DirDropdownFrame"
 dirDropdownFrame.Size = UDim2.new(1, 0, 0, 82)
@@ -340,7 +319,7 @@ dirDropdownFrame.BackgroundTransparency = 0.1
 dirDropdownFrame.BorderSizePixel = 0
 dirDropdownFrame.Visible = false
 dirDropdownFrame.ZIndex = 15
-dirDropdownFrame.LayoutOrder = 7
+dirDropdownFrame.LayoutOrder = 5
 dirDropdownFrame.Parent = combatContainer
 
 local dirDropCorner = Instance.new("UICorner")
@@ -398,7 +377,7 @@ searchContainer.Size = UDim2.new(1, 0, 0, 35)
 searchContainer.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
 searchContainer.BackgroundTransparency = 0.3
 searchContainer.BorderSizePixel = 0
-searchContainer.LayoutOrder = 8
+searchContainer.LayoutOrder = 6
 searchContainer.Parent = combatContainer
 
 local searchCorner = Instance.new("UICorner")
@@ -420,9 +399,9 @@ searchBox.ClearTextOnFocus = false
 searchBox.Parent = searchContainer
 
 local dualListContainer = Instance.new("Frame")
-dualListContainer.Size = UDim2.new(1, 0, 0, 230)
+dualListContainer.Size = UDim2.new(1, 0, 0, 240)
 dualListContainer.BackgroundTransparency = 1
-dualListContainer.LayoutOrder = 9
+dualListContainer.LayoutOrder = 7
 dualListContainer.Parent = combatContainer
 
 local dualListLayout = Instance.new("UIListLayout")
@@ -432,6 +411,7 @@ dualListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 dualListLayout.Padding = UDim.new(0, 10)
 dualListLayout.Parent = dualListContainer
 
+-- Players List Wrapper
 local playerListWrapper = Instance.new("Frame")
 playerListWrapper.Size = UDim2.new(0.49, 0, 1, 0)
 playerListWrapper.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
@@ -445,7 +425,7 @@ plCorner.CornerRadius = UDim.new(0, 4)
 plCorner.Parent = playerListWrapper
 
 local playerHeader = Instance.new("TextLabel")
-playerHeader.Size = UDim2.new(1, 0, 0, 25)
+playerHeader.Size = UDim2.new(1, 0, 0, 22)
 playerHeader.Position = UDim2.new(0, 0, 0, 2)
 playerHeader.BackgroundTransparency = 1
 playerHeader.Font = Enum.Font.GothamBold
@@ -454,15 +434,51 @@ playerHeader.TextColor3 = Color3.fromRGB(120, 210, 255)
 playerHeader.TextSize = 12
 playerHeader.Parent = playerListWrapper
 
+local playerSelectContainer = Instance.new("Frame")
+playerSelectContainer.Size = UDim2.new(1, -8, 0, 22)
+playerSelectContainer.Position = UDim2.new(0, 4, 0, 24)
+playerSelectContainer.BackgroundTransparency = 1
+playerSelectContainer.Parent = playerListWrapper
+
+local selectAllPlayersBtn = Instance.new("TextButton")
+selectAllPlayersBtn.Size = UDim2.new(0.48, 0, 1, 0)
+selectAllPlayersBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 52)
+selectAllPlayersBtn.BorderSizePixel = 0
+selectAllPlayersBtn.Font = Enum.Font.GothamSemibold
+selectAllPlayersBtn.Text = "Select All"
+selectAllPlayersBtn.TextColor3 = Color3.fromRGB(120, 210, 255)
+selectAllPlayersBtn.TextSize = 10
+selectAllPlayersBtn.Parent = playerSelectContainer
+
+local sapCorner = Instance.new("UICorner")
+sapCorner.CornerRadius = UDim.new(0, 3)
+sapCorner.Parent = selectAllPlayersBtn
+
+local deselectAllPlayersBtn = Instance.new("TextButton")
+deselectAllPlayersBtn.Size = UDim2.new(0.48, 0, 1, 0)
+deselectAllPlayersBtn.Position = UDim2.new(0.52, 0, 0, 0)
+deselectAllPlayersBtn.BackgroundColor3 = Color3.fromRGB(30, 40, 52)
+deselectAllPlayersBtn.BorderSizePixel = 0
+deselectAllPlayersBtn.Font = Enum.Font.GothamSemibold
+deselectAllPlayersBtn.Text = "Deselect All"
+deselectAllPlayersBtn.TextColor3 = Color3.fromRGB(120, 210, 255)
+deselectAllPlayersBtn.TextSize = 10
+deselectAllPlayersBtn.Parent = playerSelectContainer
+
+local dapCorner = Instance.new("UICorner")
+dapCorner.CornerRadius = UDim.new(0, 3)
+dapCorner.Parent = deselectAllPlayersBtn
+
 local playerScrollFrame = Instance.new("ScrollingFrame")
-playerScrollFrame.Size = UDim2.new(1, -8, 1, -30)
-playerScrollFrame.Position = UDim2.new(0, 4, 0, 28)
+playerScrollFrame.Size = UDim2.new(1, -8, 1, -50)
+playerScrollFrame.Position = UDim2.new(0, 4, 0, 48)
 playerScrollFrame.BackgroundTransparency = 1
 playerScrollFrame.BorderSizePixel = 0
 playerScrollFrame.ScrollBarThickness = 4
 playerScrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
 playerScrollFrame.Parent = playerListWrapper
 
+-- Entities List Wrapper
 local entityListWrapper = Instance.new("Frame")
 entityListWrapper.Size = UDim2.new(0.49, 0, 1, 0)
 entityListWrapper.BackgroundColor3 = Color3.fromRGB(22, 26, 34)
@@ -476,7 +492,7 @@ elCorner.CornerRadius = UDim.new(0, 4)
 elCorner.Parent = entityListWrapper
 
 local entityHeader = Instance.new("TextLabel")
-entityHeader.Size = UDim2.new(1, 0, 0, 25)
+entityHeader.Size = UDim2.new(1, 0, 0, 22)
 entityHeader.Position = UDim2.new(0, 0, 0, 2)
 entityHeader.BackgroundTransparency = 1
 entityHeader.Font = Enum.Font.GothamBold
@@ -485,9 +501,44 @@ entityHeader.TextColor3 = Color3.fromRGB(200, 160, 255)
 entityHeader.TextSize = 12
 entityHeader.Parent = entityListWrapper
 
+local entitySelectContainer = Instance.new("Frame")
+entitySelectContainer.Size = UDim2.new(1, -8, 0, 22)
+entitySelectContainer.Position = UDim2.new(0, 4, 0, 24)
+entitySelectContainer.BackgroundTransparency = 1
+entitySelectContainer.Parent = entityListWrapper
+
+local selectAllEntitiesBtn = Instance.new("TextButton")
+selectAllEntitiesBtn.Size = UDim2.new(0.48, 0, 1, 0)
+selectAllEntitiesBtn.BackgroundColor3 = Color3.fromRGB(35, 32, 52)
+selectAllEntitiesBtn.BorderSizePixel = 0
+selectAllEntitiesBtn.Font = Enum.Font.GothamSemibold
+selectAllEntitiesBtn.Text = "Select All"
+selectAllEntitiesBtn.TextColor3 = Color3.fromRGB(200, 160, 255)
+selectAllEntitiesBtn.TextSize = 10
+selectAllEntitiesBtn.Parent = entitySelectContainer
+
+local saeCorner = Instance.new("UICorner")
+saeCorner.CornerRadius = UDim.new(0, 3)
+saeCorner.Parent = selectAllEntitiesBtn
+
+local deselectAllEntitiesBtn = Instance.new("TextButton")
+deselectAllEntitiesBtn.Size = UDim2.new(0.48, 0, 1, 0)
+deselectAllEntitiesBtn.Position = UDim2.new(0.52, 0, 0, 0)
+deselectAllEntitiesBtn.BackgroundColor3 = Color3.fromRGB(35, 32, 52)
+deselectAllEntitiesBtn.BorderSizePixel = 0
+deselectAllEntitiesBtn.Font = Enum.Font.GothamSemibold
+deselectAllEntitiesBtn.Text = "Deselect All"
+deselectAllEntitiesBtn.TextColor3 = Color3.fromRGB(200, 160, 255)
+deselectAllEntitiesBtn.TextSize = 10
+deselectAllEntitiesBtn.Parent = entitySelectContainer
+
+local daeCorner = Instance.new("UICorner")
+daeCorner.CornerRadius = UDim.new(0, 3)
+daeCorner.Parent = deselectAllEntitiesBtn
+
 local entityScrollFrame = Instance.new("ScrollingFrame")
-entityScrollFrame.Size = UDim2.new(1, -8, 1, -30)
-entityScrollFrame.Position = UDim2.new(0, 4, 0, 28)
+entityScrollFrame.Size = UDim2.new(1, -8, 1, -50)
+entityScrollFrame.Position = UDim2.new(0, 4, 0, 48)
 entityScrollFrame.BackgroundTransparency = 1
 entityScrollFrame.BorderSizePixel = 0
 entityScrollFrame.ScrollBarThickness = 4
@@ -497,7 +548,7 @@ entityScrollFrame.Parent = entityListWrapper
 local flingActionContainer = Instance.new("Frame")
 flingActionContainer.Size = UDim2.new(1, 0, 0, 40)
 flingActionContainer.BackgroundTransparency = 1
-flingActionContainer.LayoutOrder = 10
+flingActionContainer.LayoutOrder = 8
 flingActionContainer.Parent = combatContainer
 
 local startFlingBtn = Instance.new("TextButton")
@@ -530,41 +581,6 @@ stopFlingBtn.Parent = flingActionContainer
 local stopCorner = Instance.new("UICorner")
 stopCorner.CornerRadius = UDim.new(0, 4)
 stopCorner.Parent = stopFlingBtn
-
-local selectToggleContainer = Instance.new("Frame")
-selectToggleContainer.Size = UDim2.new(1, 0, 0, 32)
-selectToggleContainer.BackgroundTransparency = 1
-selectToggleContainer.LayoutOrder = 11
-selectToggleContainer.Parent = combatContainer
-
-local selectAllBtn = Instance.new("TextButton")
-selectAllBtn.Size = UDim2.new(0.48, 0, 1, 0)
-selectAllBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 55)
-selectAllBtn.BorderSizePixel = 0
-selectAllBtn.Font = Enum.Font.GothamSemibold
-selectAllBtn.Text = "Select All"
-selectAllBtn.TextColor3 = Color3.fromRGB(150, 225, 255)
-selectAllBtn.TextSize = 12
-selectAllBtn.Parent = selectToggleContainer
-
-local saCorner = Instance.new("UICorner")
-saCorner.CornerRadius = UDim.new(0, 4)
-saCorner.Parent = selectAllBtn
-
-local deselectAllBtn = Instance.new("TextButton")
-deselectAllBtn.Size = UDim2.new(0.48, 0, 1, 0)
-deselectAllBtn.Position = UDim2.new(0.52, 0, 0, 0)
-deselectAllBtn.BackgroundColor3 = Color3.fromRGB(35, 42, 55)
-deselectAllBtn.BorderSizePixel = 0
-deselectAllBtn.Font = Enum.Font.GothamSemibold
-deselectAllBtn.Text = "Deselect All"
-deselectAllBtn.TextColor3 = Color3.fromRGB(150, 225, 255)
-deselectAllBtn.TextSize = 12
-deselectAllBtn.Parent = selectToggleContainer
-
-local daCorner = Instance.new("UICorner")
-daCorner.CornerRadius = UDim.new(0, 4)
-daCorner.Parent = deselectAllBtn
 
 -- Player Stats Panel
 local statsPanel = Instance.new("Frame")
@@ -764,13 +780,12 @@ local cameraZoomEnabled = false
 local pausedScreenEnabled = true
 local noTextureEnabled = false
 local noTextureClickStep = 0
-local noTextureTick = 0
 local noFogEnabled = false
 local fullBrightEnabled = false
 local humEspEnabled = false
 local flySpeed = 50
 
-local bg, bv
+local bg, bv, flingSwimBv, swimBv
 local flyConnection, swimConnection, noclipConnection, infJumpConnection, joystickConnection, cameraZoomConnection, pausedScreenConnection, noTextureConnection
 
 local COLOR_PLAYER_DEFAULT = Color3.fromRGB(0, 200, 255)
@@ -839,7 +854,7 @@ RunService.RenderStepped:Connect(function(dt)
     end
 
     -- 3. Ground Hover Logic
-    if hoverEnabled and not flyEnabled and not swimEnabled and root then
+    if hoverEnabled and not flyEnabled and not FlingActive and root then
         raycastParams.FilterDescendantsInstances = {char}
         local rayResult = Workspace:Raycast(root.Position + Vector3.new(0, 3.8, 0), Vector3.new(0, -150, 0), raycastParams)
         if rayResult then
@@ -1187,6 +1202,57 @@ targetNearestBtn.MouseButton1Click:Connect(function()
     UpdateFlingStatus()
 end)
 
+-- Dedicated Select All / Deselect All Handlers for Players & Entities
+selectAllPlayersBtn.MouseButton1Click:Connect(function()
+    local pTargets, _ = GetCategorizedTargets()
+    local filterText = searchBox.Text:lower()
+    for _, targetData in ipairs(pTargets) do
+        if filterText == "" or string.find(targetData.Name:lower(), filterText, 1, true) then
+            local key = tostring(targetData.Model)
+            SelectedTargets[key] = targetData
+            if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = true end
+        end
+    end
+    UpdateFlingStatus()
+end)
+
+deselectAllPlayersBtn.MouseButton1Click:Connect(function()
+    local pTargets, _ = GetCategorizedTargets()
+    for _, targetData in ipairs(pTargets) do
+        local key = tostring(targetData.Model)
+        if SelectedTargets[key] then
+            SelectedTargets[key] = nil
+            if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = false end
+        end
+    end
+    UpdateFlingStatus()
+end)
+
+selectAllEntitiesBtn.MouseButton1Click:Connect(function()
+    local _, eTargets = GetCategorizedTargets()
+    local filterText = searchBox.Text:lower()
+    for _, targetData in ipairs(eTargets) do
+        if filterText == "" or string.find(targetData.Name:lower(), filterText, 1, true) then
+            local key = tostring(targetData.Model)
+            SelectedTargets[key] = targetData
+            if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = true end
+        end
+    end
+    UpdateFlingStatus()
+end)
+
+deselectAllEntitiesBtn.MouseButton1Click:Connect(function()
+    local _, eTargets = GetCategorizedTargets()
+    for _, targetData in ipairs(eTargets) do
+        local key = tostring(targetData.Model)
+        if SelectedTargets[key] then
+            SelectedTargets[key] = nil
+            if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = false end
+        end
+    end
+    UpdateFlingStatus()
+end)
+
 local function GetModelMass(model)
     local totalMass = 0
     for _, part in ipairs(model:GetDescendants()) do
@@ -1242,7 +1308,6 @@ local function SkidSelectionAxisFlingModel(TargetData)
             local actualTargetPos = TRootPart and TRootPart.Position or BasePart.Position
             local targetVelocity = TRootPart and TRootPart.AssemblyLinearVelocity or Vector3.new()
             
-            -- Velocity-scaled dynamic prediction math
             local predictedPos = actualTargetPos
             if movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
                 local dist = (RootPart.Position - actualTargetPos).Magnitude
@@ -1274,6 +1339,10 @@ local function SkidSelectionAxisFlingModel(TargetData)
             local Time = tick()
             repeat
                 if RootPart and THumanoid then
+                    if Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+                        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+                        Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+                    end
                     FPosAxis(BasePart)
                     task.wait()
                 end
@@ -1290,15 +1359,24 @@ local function SkidSelectionAxisFlingModel(TargetData)
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
         Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
         
+        if flingSwimBv then flingSwimBv:Destroy() end
+        flingSwimBv = Instance.new("BodyVelocity")
+        flingSwimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+        flingSwimBv.Velocity = Vector3.new(0, 0, 0)
+        flingSwimBv.Parent = RootPart
+        
         SFBasePart(targetPart)
         
+        if flingSwimBv then flingSwimBv:Destroy() flingSwimBv = nil end
         BV:Destroy()
         Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
         Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
     end
 end
 
 local function ReturnToOriginalPosition()
+    if flingSwimBv then flingSwimBv:Destroy() flingSwimBv = nil end
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local rootPart = humanoid and humanoid.RootPart
@@ -1388,27 +1466,6 @@ stopFlingBtn.MouseButton1Click:Connect(function()
     task.spawn(ReturnToOriginalPosition)
 end)
 
-selectAllBtn.MouseButton1Click:Connect(function()
-    local pTargets, eTargets = GetCategorizedTargets()
-    local filterText = searchBox.Text:lower()
-    for _, list in ipairs({pTargets, eTargets}) do
-        for _, targetData in ipairs(list) do
-            if filterText == "" or string.find(targetData.Name:lower(), filterText, 1, true) then
-                local key = tostring(targetData.Model)
-                SelectedTargets[key] = targetData
-                if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = true end
-            end
-        end
-    end
-    UpdateFlingStatus()
-end)
-
-deselectAllBtn.MouseButton1Click:Connect(function()
-    SelectedTargets = {}
-    for _, cb in pairs(TargetCheckboxes) do cb.Checkmark.Visible = false end
-    UpdateFlingStatus()
-end)
-
 task.spawn(function()
     while screenGui.Parent do
         if not FlingActive and combatContainer.Visible then RefreshTargetLists() end
@@ -1424,7 +1481,7 @@ speedBox.FocusLost:Connect(function()
     if val then flySpeed = val else speedBox.Text = tostring(flySpeed) end
 end)
 
--- Fly / Swim / Movement handlers
+-- Fly / Movement handlers
 local function startFly()
     local char = LocalPlayer.Character
     local root = char and char:FindFirstChild("HumanoidRootPart")
@@ -1473,23 +1530,34 @@ end
 local function stopFly()
     if flyConnection then flyConnection:Disconnect() flyConnection = nil end
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum and not swimEnabled then hum.PlatformStand = false end
+    if hum then hum.PlatformStand = false end
     if bg then bg:Destroy() bg = nil end
     if bv then bv:Destroy() bv = nil end
 end
 
--- ================= NATIVE FLUID SWIM MODE =================
-local function getWorkspaceWaterParts()
-    local waterParts = {}
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("BasePart") then
-            if obj.Material == Enum.Material.Water or string.find(obj.Name:lower(), "water") or string.find(obj.Name:lower(), "fluid") or string.find(obj.Name:lower(), "ocean") or string.find(obj.Name:lower(), "sea") then
-                table.insert(waterParts, obj)
-            end
-        end
-    end
-    return waterParts
+-- ================= OPTIMIZED FLUID SWIM MODE =================
+local cachedWaterCount = 0
+local function isWaterPart(obj)
+    if not obj:IsA("BasePart") then return false end
+    if obj.Material == Enum.Material.Water then return true end
+    local lowerName = obj.Name:lower()
+    return string.find(lowerName, "water", 1, true) ~= nil
+        or string.find(lowerName, "fluid", 1, true) ~= nil
+        or string.find(lowerName, "ocean", 1, true) ~= nil
+        or string.find(lowerName, "sea", 1, true) ~= nil
 end
+
+for _, obj in ipairs(Workspace:GetDescendants()) do
+    if isWaterPart(obj) then cachedWaterCount = cachedWaterCount + 1 end
+end
+
+Workspace.DescendantAdded:Connect(function(obj)
+    if isWaterPart(obj) then cachedWaterCount = cachedWaterCount + 1 end
+end)
+
+Workspace.DescendantRemoving:Connect(function(obj)
+    if isWaterPart(obj) then cachedWaterCount = math.max(0, cachedWaterCount - 1) end
+end)
 
 local function startSwim()
     local char = LocalPlayer.Character
@@ -1500,13 +1568,34 @@ local function startSwim()
     hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
     hum:ChangeState(Enum.HumanoidStateType.Swimming)
 
+    if swimBv then swimBv:Destroy() end
+    swimBv = Instance.new("BodyVelocity")
+    swimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
+    swimBv.Velocity = Vector3.new(0, 0, 0)
+    swimBv.Parent = root
+
     if swimConnection then swimConnection:Disconnect() end
-    swimConnection = RunService.RenderStepped:Connect(function()
-        local currentHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        local currentRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    swimConnection = RunService.Heartbeat:Connect(function()
+        local currentChar = LocalPlayer.Character
+        local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
+        local currentRoot = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
         if not currentHum or not currentRoot then return end
 
-        currentHum:ChangeState(Enum.HumanoidStateType.Swimming)
+        if currentHum:GetState() ~= Enum.HumanoidStateType.Swimming then
+            currentHum:ChangeState(Enum.HumanoidStateType.Swimming)
+        end
+
+        if FlingActive then
+            if swimBv then swimBv.MaxForce = Vector3.new(0, 0, 0) end
+            return
+        end
+
+        if not swimBv or swimBv.Parent ~= currentRoot then
+            if swimBv then swimBv:Destroy() end
+            swimBv = Instance.new("BodyVelocity")
+            swimBv.Parent = currentRoot
+        end
+        swimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
 
         local moveDir = Vector3.new()
         local moveVector = currentHum.MoveDirection
@@ -1527,17 +1616,17 @@ local function startSwim()
             moveDir = moveDir + (Camera.CFrame.RightVector * joystickDir.X) + (Camera.CFrame.LookVector * -joystickDir.Y)
         end
 
-        local waterParts = getWorkspaceWaterParts()
-        if #waterParts > 0 then
-            currentRoot.AssemblyLinearVelocity = moveDir.Magnitude > 0 and (moveDir.Unit * currentHum.WalkSpeed) or Vector3.new(0, -2, 0)
+        if moveDir.Magnitude > 0 then
+            swimBv.Velocity = moveDir.Unit * currentHum.WalkSpeed
         else
-            currentRoot.AssemblyLinearVelocity = moveDir.Magnitude > 0 and (moveDir.Unit * currentHum.WalkSpeed) or Vector3.new(0, 0, 0)
+            swimBv.Velocity = cachedWaterCount > 0 and Vector3.new(0, -2, 0) or Vector3.new(0, 0, 0)
         end
     end)
 end
 
 local function stopSwim()
     if swimConnection then swimConnection:Disconnect() swimConnection = nil end
+    if swimBv then swimBv:Destroy() swimBv = nil end
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
     if hum then 
         hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
