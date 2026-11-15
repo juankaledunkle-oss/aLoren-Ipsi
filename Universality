@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau
--- Updated: "Submerged Seated Glide" actively forces Seated status and posture while applying 3D Trench-Walker glide physics.
+-- Updated: Added DisplayOrder = 999999 to ensure the GUI stays on top of all game UIs.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -25,10 +25,11 @@ local State = {
     swimEnabled = false,
     seatedSwimEnabled = false,
     seatedFlingEnabled = false,
+    spinEnabled = false,
     noclipEnabled = false,
     infJumpEnabled = false,
     joystickEnabled = false,
-    cameraZoomEnabled = false,
+    cameraZoomEnabled = true, -- Default ON as requested
     pausedScreenEnabled = true,
     noTextureEnabled = false,
     noTextureClickStep = 0,
@@ -36,7 +37,9 @@ local State = {
     noFogEnabled = false,
     fullBrightEnabled = false,
     humEspEnabled = false,
+    espIgnoreAnchoredEnabled = true, -- Default ON as requested
     flySpeed = 150,
+    avatarSpinSpeed = 0,
     targetNearestEnabled = false,
     movementPredictorEnabled = false,
     autoIgnoreAnchoredEnabled = true,
@@ -93,6 +96,10 @@ local UpdateFlingStatus
 local stopFly
 local startSeatedSwim
 local stopSeatedSwim
+local startSpin
+local stopSpin
+local startCameraZoom
+local stopCameraZoom
 
 -- UI Helper Functions
 local function addCorner(parent, radius)
@@ -164,10 +171,11 @@ local function createNumberInputRow(parent, labelText, defaultValue, accentColor
     return box
 end
 
--- Main ScreenGui & Window Setup
+-- Main ScreenGui & Window Setup (DisplayOrder set to 999999 for top layer priority)
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RayfieldStyleGui"
 screenGui.ResetOnSpawn = false
+screenGui.DisplayOrder = 999999
 screenGui.Parent = PlayerGui
 
 local openButton = Instance.new("TextButton")
@@ -298,7 +306,7 @@ local function createTabContainer(name, canvasHeight)
     frame.Position = UDim2.new(0, 10, 0, 85)
     frame.BackgroundTransparency = 1
     frame.BorderSizePixel = 0
-    frame.CanvasSize = UDim2.new(0, 0, 0, canvasHeight or 1020)
+    frame.CanvasSize = UDim2.new(0, 0, 0, canvasHeight or 1200)
     frame.ScrollBarThickness = 4
     frame.Visible = false
     frame.Parent = mainWindow
@@ -311,8 +319,8 @@ local function createTabContainer(name, canvasHeight)
 end
 
 local espContainer = createTabContainer("ESPContainer", 850)
-local combatContainer = createTabContainer("CombatContainer", 960)
-local playerContainer = createTabContainer("PlayerContainer", 1040)
+local combatContainer = createTabContainer("CombatContainer", 1020)
+local playerContainer = createTabContainer("PlayerContainer", 1200)
 local settingsContainer = createTabContainer("SettingsContainer", 400)
 
 espContainer.Visible = true
@@ -367,19 +375,20 @@ do
     end)
 end
 
--- Sovereignty Tab
+-- Sovereignty Tab (ESP Container)
 local humEspButton = createButton(espContainer, "In Search of Bodies (ESP) : OFF", Color3.fromRGB(235, 120, 120), 1)
-local pausedScreenButton = createButton(espContainer, "Undo World Bindings: ON", Color3.fromRGB(255, 170, 170), 2, Color3.fromRGB(110, 25, 35))
-local noTextureButton = createButton(espContainer, "Distill Perception (AntiLag): OFF", Color3.fromRGB(210, 140, 140), 3)
-local noFogButton = createButton(espContainer, "Piercing Gaze (NoFog): OFF", Color3.fromRGB(230, 130, 130), 4)
-local fullBrightButton = createButton(espContainer, "A New Day (FB): OFF", Color3.fromRGB(240, 160, 160), 5)
+local espIgnoreAnchoredButton = createButton(espContainer, "ESP Ignore Anchored: ON", Color3.fromRGB(220, 130, 130), 2, Color3.fromRGB(80, 15, 20))
+local pausedScreenButton = createButton(espContainer, "Undo World Bindings: ON", Color3.fromRGB(255, 170, 170), 3, Color3.fromRGB(110, 25, 35))
+local noTextureButton = createButton(espContainer, "Distill Perception (AntiLag): OFF", Color3.fromRGB(210, 140, 140), 4)
+local noFogButton = createButton(espContainer, "Piercing Gaze (NoFog): OFF", Color3.fromRGB(230, 130, 130), 5)
+local fullBrightButton = createButton(espContainer, "A New Day (FB): OFF", Color3.fromRGB(240, 160, 160), 6)
 
 -- Ritual Tab
 local flingStatusLabel = Instance.new("TextLabel")
 flingStatusLabel.Size = UDim2.new(1, 0, 0, 25)
 flingStatusLabel.BackgroundTransparency = 1
 flingStatusLabel.Font = Enum.Font.GothamBold
-flingStatusLabel.Text = "0 souls bound"
+flingStatusLabel.Text = "The Tethered (0)"
 flingStatusLabel.TextColor3 = Color3.fromRGB(210, 180, 180)
 flingStatusLabel.TextSize = 13
 flingStatusLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -449,19 +458,12 @@ autoIgnoreAnchoredBtn.MouseButton1Click:Connect(function()
     if UpdateFlingStatus then UpdateFlingStatus() end
 end)
 
-local seatedFlingBtn = createButton(combatContainer, "Entropic Seated Fling: OFF", Color3.fromRGB(220, 140, 140), 7)
-seatedFlingBtn.MouseButton1Click:Connect(function()
-    State.seatedFlingEnabled = not State.seatedFlingEnabled
-    seatedFlingBtn.Text = State.seatedFlingEnabled and "Entropic Seated Fling: ON" or "Entropic Seated Fling: OFF"
-    seatedFlingBtn.BackgroundColor3 = State.seatedFlingEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
-end)
-
 local searchContainer = Instance.new("Frame")
 searchContainer.Size = UDim2.new(1, 0, 0, 35)
 searchContainer.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
 searchContainer.BackgroundTransparency = 0.3
 searchContainer.BorderSizePixel = 0
-searchContainer.LayoutOrder = 8
+searchContainer.LayoutOrder = 7
 searchContainer.Parent = combatContainer
 addCorner(searchContainer, 4)
 
@@ -482,7 +484,7 @@ searchBox.Parent = searchContainer
 local dualListContainer = Instance.new("Frame")
 dualListContainer.Size = UDim2.new(1, 0, 0, 240)
 dualListContainer.BackgroundTransparency = 1
-dualListContainer.LayoutOrder = 9
+dualListContainer.LayoutOrder = 8
 dualListContainer.Parent = combatContainer
 
 local dualListLayout = Instance.new("UIListLayout")
@@ -563,7 +565,7 @@ local entityScrollFrame, selectAllEntitiesBtn, deselectAllEntitiesBtn = buildTar
 local flingActionContainer = Instance.new("Frame")
 flingActionContainer.Size = UDim2.new(1, 0, 0, 40)
 flingActionContainer.BackgroundTransparency = 1
-flingActionContainer.LayoutOrder = 10
+flingActionContainer.LayoutOrder = 9
 flingActionContainer.Parent = combatContainer
 
 local startFlingBtn = Instance.new("TextButton")
@@ -591,12 +593,19 @@ stopFlingBtn.TextSize = 13
 stopFlingBtn.Parent = flingActionContainer
 addCorner(stopFlingBtn, 4)
 
+local seatedFlingBtn = createButton(combatContainer, "Entropic Seated Fling: OFF", Color3.fromRGB(220, 140, 140), 10)
+seatedFlingBtn.MouseButton1Click:Connect(function()
+    State.seatedFlingEnabled = not State.seatedFlingEnabled
+    seatedFlingBtn.Text = State.seatedFlingEnabled and "Entropic Seated Fling: ON" or "Entropic Seated Fling: OFF"
+    seatedFlingBtn.BackgroundColor3 = State.seatedFlingEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
+end)
+
 -- Vessel (Player) Tab
 local avatarViewport, avCam
 do
     local statsPanel = Instance.new("Frame")
     statsPanel.Name = "StatsPanel"
-    statsPanel.Size = UDim2.new(1, 0, 0, 260)
+    statsPanel.Size = UDim2.new(1, 0, 0, 310)
     statsPanel.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
     statsPanel.BackgroundTransparency = 0.3
     statsPanel.BorderSizePixel = 0
@@ -629,7 +638,7 @@ do
     tableLayout.Padding = UDim.new(0, 2)
     tableLayout.Parent = statsTableContainer
 
-    local statKeys = {"Name", "Health", "Speed (Studs/s)", "WalkSpeed", "JumpHeight", "Status", "Weight (kg)"}
+    local statKeys = {"Name", "Health", "Speed (Studs/s)", "WalkSpeed", "JumpHeight", "Status", "Weight (kg)", "Gravity", "Coordinates"}
     for i, key in ipairs(statKeys) do
         local row = Instance.new("Frame")
         row.Size = UDim2.new(1, 0, 0, 24)
@@ -638,7 +647,7 @@ do
         row.Parent = statsTableContainer
 
         local kLabel = Instance.new("TextLabel")
-        kLabel.Size = UDim2.new(0.45, 0, 1, 0)
+        kLabel.Size = UDim2.new(0.38, 0, 1, 0)
         kLabel.Position = UDim2.new(0, 8, 0, 0)
         kLabel.BackgroundTransparency = 1
         kLabel.Font = Enum.Font.GothamSemibold
@@ -649,8 +658,8 @@ do
         kLabel.Parent = row
 
         local vLabel = Instance.new("TextLabel")
-        vLabel.Size = UDim2.new(0.52, 0, 1, 0)
-        vLabel.Position = UDim2.new(0.45, 0, 0, 0)
+        vLabel.Size = UDim2.new(0.58, 0, 1, 0)
+        vLabel.Position = UDim2.new(0.38, 0, 0, 0)
         vLabel.BackgroundTransparency = 1
         vLabel.Font = Enum.Font.GothamBold
         vLabel.Text = "Loading..."
@@ -704,7 +713,7 @@ end)
 task.defer(updateAvatarPreview)
 
 local hoverButton = createButton(playerContainer, "Suspension Over The Void: OFF", Color3.fromRGB(230, 140, 140), 2)
-local cameraZoomButton = createButton(playerContainer, "Astral Projection View: OFF", Color3.fromRGB(220, 160, 160), 3)
+local cameraZoomButton = createButton(playerContainer, "Astral Projection View: ON", Color3.fromRGB(220, 160, 160), 3, Color3.fromRGB(90, 20, 25))
 local flyButton = createButton(playerContainer, "Winged Appendage: OFF", Color3.fromRGB(240, 120, 120), 4)
 local speedBox = createNumberInputRow(playerContainer, "Absolute Air-Control:", 150, Color3.fromRGB(240, 120, 120), 5)
 local infJumpButton = createButton(playerContainer, "Steps To Heaven: OFF", Color3.fromRGB(230, 130, 130), 6)
@@ -712,6 +721,8 @@ local noclipButton = createButton(playerContainer, "Ethereal Phase: OFF", Color3
 local joystickButton = createButton(playerContainer, "Ritualistic Pad: OFF", Color3.fromRGB(230, 140, 140), 8)
 local swimButton = createButton(playerContainer, "The Trench-Walker's Apotheosis: OFF", Color3.fromRGB(220, 130, 130), 9)
 local seatedSwimButton = createButton(playerContainer, "Submerged Seated Glide: OFF", Color3.fromRGB(220, 140, 140), 10)
+local spinButton = createButton(playerContainer, "Vortex Spin: OFF", Color3.fromRGB(230, 140, 140), 11)
+local spinSpeedBox = createNumberInputRow(playerContainer, "Vortex Velocity:", 0, Color3.fromRGB(230, 140, 140), 12)
 
 local joystickFrame = Instance.new("Frame")
 joystickFrame.Name = "CustomJoystickBase"
@@ -762,12 +773,14 @@ combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, com
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
 gearButton.MouseButton1Click:Connect(function() switchTab(settingsContainer, nil) end)
 
--- Helpers
+-- Accurate weight calculation using part:GetMass()
 local function getModelMassKg(model)
     local totalMass = 0
     pcall(function()
         for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then totalMass = totalMass + part.AssemblyMass end
+            if part:IsA("BasePart") then 
+                totalMass = totalMass + part:GetMass() 
+            end
         end
     end)
     return math.floor(totalMass)
@@ -776,6 +789,21 @@ end
 local function isTargetAnchored(charModel, humanoid)
     if not State.autoIgnoreAnchoredEnabled then return false end
     local rootPart = charModel:FindFirstChild("HumanoidRootPart") or charModel:FindFirstChild("PrimaryPart") or charModel:FindFirstChildWhichIsA("BasePart")
+    if rootPart and rootPart.Anchored then return true end
+    
+    if humanoid and humanoid.Sit and humanoid.SeatPart then
+        local seat = humanoid.SeatPart
+        if seat.Anchored or (seat.AssemblyRootPart and seat.AssemblyRootPart.Anchored) then
+            return true
+        end
+    end
+    return false
+end
+
+-- Helper specifically for ESP anchoring filter
+local function isModelAnchoredForESP(model, humanoid)
+    if not State.espIgnoreAnchoredEnabled then return false end
+    local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("PrimaryPart") or model:FindFirstChildWhichIsA("BasePart")
     if rootPart and rootPart.Anchored then return true end
     
     if humanoid and humanoid.Sit and humanoid.SeatPart then
@@ -814,6 +842,9 @@ RunService.RenderStepped:Connect(function(dt)
             statLabels["JumpHeight"].Text = string.format("%.1f", hum and (hum.UseJumpPower and hum.JumpPower or hum.JumpHeight) or 0)
             statLabels["Status"].Text = hum and hum:GetState().Name or "Unknown"
             statLabels["Weight (kg)"].Text = string.format("%d kg", char and getModelMassKg(char) or 0)
+            statLabels["Gravity"].Text = string.format("%.1f", Workspace.Gravity)
+            local pos = root and root.Position or Vector3.new()
+            statLabels["Coordinates"].Text = string.format("%d, %d, %d", math.round(pos.X), math.round(pos.Y), math.round(pos.Z))
         end
     end)
 
@@ -938,7 +969,7 @@ RunService.RenderStepped:Connect(function()
         local hum = model:FindFirstChildOfClass("Humanoid")
         local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("PrimaryPart") or model:FindFirstChildWhichIsA("BasePart")
 
-        if model.Parent and hum and rootPart and hum.Health > 0 then
+        if model.Parent and hum and rootPart and hum.Health > 0 and not isModelAnchoredForESP(model, hum) then
             local isPlayer = Players:GetPlayerFromCharacter(model) ~= nil
             local espColor = isPlayer and Colors.VesselOutline or Colors.AbomOutline
             local fillCol = isPlayer and Colors.VesselFill or Colors.AbomFill
@@ -1081,12 +1112,11 @@ end
 UpdateFlingStatus = function()
     local count = 0
     for _ in pairs(SelectedTargets) do count = count + 1 end
-    local mode = FlingDirections[State.currentDirIndex]
     if State.FlingActive then
-        flingStatusLabel.Text = State.targetNearestEnabled and ("OmniFling (" .. mode .. ") nearest target...") or ("OmniFling (" .. mode .. ") " .. count .. " soul(s) bound...")
+        flingStatusLabel.Text = State.targetNearestEnabled and "Let us sink here together... (Nearest)" or string.format("Let us sink here together... (%d)", count)
         flingStatusLabel.TextColor3 = Color3.fromRGB(255, 60, 60)
     else
-        flingStatusLabel.Text = State.targetNearestEnabled and "Target Nearest Mode active" or (count .. " soul(s) selected")
+        flingStatusLabel.Text = State.targetNearestEnabled and "The Tethered (Nearest Mode)" or string.format("The Tethered (%d)", count)
         flingStatusLabel.TextColor3 = Color3.fromRGB(210, 180, 180)
     end
 end
@@ -1404,12 +1434,12 @@ startFlingBtn.MouseButton1Click:Connect(function()
     if State.targetNearestEnabled then
         local nearest = GetNearestSingleTarget()
         if not nearest then 
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Ritual", Text = "No valid souls found in the void!", Duration = 2 }) end)
+            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Insufficient", Text = "No valid souls found in the void!", Duration = 2 }) end)
             return 
         end
         State.FlingActive = true
         UpdateFlingStatus()
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "OmniFling", Text = "Ritual initiated (" .. mode .. ") on nearest soul", Duration = 2 }) end)
+        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Futile", Text = "Initiating Absolute Destruction", Duration = 2 }) end)
         
         task.spawn(function()
             while State.FlingActive do
@@ -1426,13 +1456,13 @@ startFlingBtn.MouseButton1Click:Connect(function()
         local count = 0
         for _ in pairs(SelectedTargets) do count = count + 1 end
         if count == 0 then 
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Ritual", Text = "Select at least one soul first!", Duration = 2 }) end)
+            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Insufficient", Text = "Select at least one soul first!", Duration = 2 }) end)
             return 
         end
         
         State.FlingActive = true
         UpdateFlingStatus()
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "OmniFling", Text = "Ritual initiated (" .. mode .. ") on " .. count .. " souls", Duration = 2 }) end)
+        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Futile", Text = "Initiating Absolute Destruction", Duration = 2 }) end)
         
         task.spawn(function()
             while State.FlingActive do
@@ -1463,7 +1493,7 @@ stopFlingBtn.MouseButton1Click:Connect(function()
     if not State.FlingActive then return end
     State.FlingActive = false
     UpdateFlingStatus()
-    pcall(function() StarterGui:SetCore("SendNotification", { Title = "OmniFling", Text = "Ritual ceased - returning to sanctum", Duration = 2 }) end)
+    pcall(function() StarterGui:SetCore("SendNotification", { Title = "Seal", Text = "Power sealed.", Duration = 2 }) end)
     task.spawn(ReturnToOriginalPosition)
 end)
 
@@ -1480,6 +1510,11 @@ UpdateFlingStatus()
 speedBox.FocusLost:Connect(function()
     local val = tonumber(speedBox.Text)
     if val then State.flySpeed = val else speedBox.Text = tostring(State.flySpeed) end
+end)
+
+spinSpeedBox.FocusLost:Connect(function()
+    local val = tonumber(spinSpeedBox.Text)
+    if val then State.avatarSpinSpeed = val else spinSpeedBox.Text = tostring(State.avatarSpinSpeed) end
 end)
 
 -- Movement & Utility Controls
@@ -1551,6 +1586,23 @@ stopFly = function()
     if Physics.bv then Physics.bv:Destroy() Physics.bv = nil end
 end
 
+-- Unconstrained Vortex Spin Mechanics
+local function startSpin()
+    if Connections.spin then Connections.spin:Disconnect() end
+    Connections.spin = RunService.RenderStepped:Connect(function(dt)
+        if not State.spinEnabled then return end
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        if root then
+            root.CFrame = root.CFrame * CFrame.Angles(0, State.avatarSpinSpeed * dt, 0)
+        end
+    end)
+end
+
+local function stopSpin()
+    if Connections.spin then Connections.spin:Disconnect() Connections.spin = nil end
+end
+
 -- Seated Glide with Enforced Seated Status & Trench-Walker 3D Physics
 startSeatedSwim = function()
     if Connections.seatedSwim then Connections.seatedSwim:Disconnect() end
@@ -1564,7 +1616,6 @@ startSeatedSwim = function()
             return 
         end
 
-        -- Enforce Seated Status and Posture
         hum.Sit = true
         hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
         pcall(function() hum:ChangeState(Enum.HumanoidStateType.Seated) end)
@@ -1796,7 +1847,7 @@ local function stopJoystick()
     if Connections.joystick then Connections.joystick:Disconnect() Connections.joystick = nil end
 end
 
-local function startCameraZoom()
+startCameraZoom = function()
     if Connections.cameraZoom then Connections.cameraZoom:Disconnect() end
     LocalPlayer.CameraMaxZoomDistance, LocalPlayer.CameraMinZoomDistance, LocalPlayer.CameraMode = 999999, 0.5, Enum.CameraMode.Classic
     Connections.cameraZoom = RunService.Heartbeat:Connect(function()
@@ -1806,11 +1857,16 @@ local function startCameraZoom()
     end)
 end
 
-local function stopCameraZoom()
+stopCameraZoom = function()
     if Connections.cameraZoom then Connections.cameraZoom:Disconnect() Connections.cameraZoom = nil end
     LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
     LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
     LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+end
+
+-- Initialize Astral Projection if enabled by default
+if State.cameraZoomEnabled then
+    startCameraZoom()
 end
 
 local function startPausedScreenRemoval()
@@ -1897,6 +1953,12 @@ humEspButton.MouseButton1Click:Connect(function()
     end
 end)
 
+espIgnoreAnchoredButton.MouseButton1Click:Connect(function()
+    State.espIgnoreAnchoredEnabled = not State.espIgnoreAnchoredEnabled
+    espIgnoreAnchoredButton.Text = State.espIgnoreAnchoredEnabled and "ESP Ignore Anchored: ON" or "ESP Ignore Anchored: OFF"
+    espIgnoreAnchoredButton.BackgroundColor3 = State.espIgnoreAnchoredEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
+end)
+
 pausedScreenButton.MouseButton1Click:Connect(function()
     State.pausedScreenEnabled = not State.pausedScreenEnabled
     pausedScreenButton.Text = State.pausedScreenEnabled and "Undo World Bindings: ON" or "Undo World Bindings: OFF"
@@ -1975,6 +2037,13 @@ seatedSwimButton.MouseButton1Click:Connect(function()
     seatedSwimButton.Text = State.seatedSwimEnabled and "Submerged Seated Glide: ON" or "Submerged Seated Glide: OFF"
     seatedSwimButton.BackgroundColor3 = State.seatedSwimEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
     if State.seatedSwimEnabled then startSeatedSwim() else stopSeatedSwim() end
+end)
+
+spinButton.MouseButton1Click:Connect(function()
+    State.spinEnabled = not State.spinEnabled
+    spinButton.Text = State.spinEnabled and "Vortex Spin: ON" or "Vortex Spin: OFF"
+    spinButton.BackgroundColor3 = State.spinEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
+    if State.spinEnabled then startSpin() else stopSpin() end
 end)
 
 noclipButton.MouseButton1Click:Connect(function()
