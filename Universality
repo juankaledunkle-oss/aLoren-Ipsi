@@ -1,13 +1,11 @@
 -- Target Engine: Roblox Luau
--- Updated: Added queue_on_teleport for auto-reexecution across game teleports and server hops.
+-- Updated: Robust infinite auto-reexecution queue across teleports and server hops.
 
-local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and queue_on_teleport)
+local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 if queueOnTeleport then
     pcall(function()
         queueOnTeleport([[
-            -- Auto-reloaded on teleport
-            -- Paste your script loadstring or re-execution logic here if hosted online, 
-            -- or your executor will carry over the session context.
+            loadstring(game:HttpGet("https://raw.githubusercontent.com/juankaledunkle-oss/aLoren-Ipsi/refs/heads/main/Universality"))()
         ]])
     end)
 end
