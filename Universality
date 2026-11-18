@@ -1,5 +1,5 @@
 -- Target Engine: Roblox Luau
--- Updated: Robust infinite auto-reexecution queue across teleports and server hops.
+-- Updated: Removed "chant:" prefix from multi-step clicks and aligned the Purge & Terminate button precisely to the bottom scroll limit.
 
 local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 if queueOnTeleport then
@@ -330,7 +330,7 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 1020)
 local playerContainer = createTabContainer("PlayerContainer", 1200)
-local settingsContainer = createTabContainer("SettingsContainer", 400)
+local settingsContainer = createTabContainer("SettingsContainer", 480) -- Calibrated canvas height
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
@@ -379,6 +379,106 @@ do
                 resetClickCount = 0
                 resetCharButton.Text = "Sacrifice Vessel"
                 resetCharButton.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+            end)
+        end
+    end)
+end
+
+-- Spacer Frame sized to land precisely at the bottom scroll limit
+local settingsSpacer = Instance.new("Frame")
+settingsSpacer.Name = "SettingsSpacer"
+settingsSpacer.Size = UDim2.new(1, 0, 0, 340)
+settingsSpacer.BackgroundTransparency = 1
+settingsSpacer.BorderSizePixel = 0
+settingsSpacer.LayoutOrder = 9
+settingsSpacer.Parent = settingsContainer
+
+-- Purge & Terminate Script at the exact bottom scroll limit of Settings
+local killScriptButton = createButton(settingsContainer, "Purge & Terminate Script", Color3.fromRGB(250, 40, 40), 10)
+
+-- Complete Script Termination Function
+local function terminateScript()
+    for _, conn in pairs(Connections) do
+        if typeof(conn) == "RBXScriptConnection" then
+            pcall(function() conn:Disconnect() end)
+        end
+    end
+    Connections = {}
+
+    for _, obj in pairs(Physics) do
+        if typeof(obj) == "Instance" then
+            pcall(function() obj:Destroy() end)
+        end
+    end
+    Physics = {}
+
+    pcall(function()
+        Lighting.Brightness = originalLighting.Brightness
+        Lighting.ClockTime = originalLighting.ClockTime
+        Lighting.FogEnd = originalLighting.FogEnd
+        Lighting.FogStart = originalLighting.FogStart
+        Lighting.GlobalShadows = originalLighting.GlobalShadows
+        Lighting.OutdoorAmbient = originalLighting.OutdoorAmbient
+    end)
+
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
+        LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
+        LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+        Camera.CameraType = Enum.CameraType.Custom
+        Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    end)
+
+    pcall(function()
+        Workspace.FallenPartsDestroyHeight = env.FPDH
+    end)
+
+    pcall(function()
+        if screenGui then screenGui:Destroy() end
+    end)
+end
+
+do
+    local killClickCount = 0
+    local lastKillClickTime = 0
+    
+    local chantPhrases = {
+        "Cease the ritual whispers... (1/10)",
+        "Sever the unholy tethers... (2/10)",
+        "Purify the tainted domain... (3/10)",
+        "Cleanse the corrupted altar... (4/10)",
+        "Dispel the gathering shadows... (5/10)",
+        "Break the bindings of entropy... (6/10)",
+        "Purge the false cult forever... (7/10)",
+        "Seal the abyssal gateway... (8/10)",
+        "Final incantation... End it now. (9/10)"
+    }
+
+    killScriptButton.MouseButton1Click:Connect(function()
+        local currentTime = tick()
+        if currentTime - lastKillClickTime > 0.8 then killClickCount = 0 end
+        lastKillClickTime = currentTime
+        killClickCount = killClickCount + 1
+        local currentKillId = killClickCount
+
+        task.delay(0.8, function()
+            if killClickCount == currentKillId and killClickCount < 10 then
+                killClickCount = 0
+                killScriptButton.Text = "Purge & Terminate Script"
+                killScriptButton.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+            end
+        end)
+
+        if killClickCount < 10 then
+            killScriptButton.Text = chantPhrases[killClickCount] or string.format("Terminate Script? (%d/10 clicks)", killClickCount)
+            killScriptButton.BackgroundColor3 = Color3.fromRGB(math.min(20 + (killClickCount * 18), 180), 10, 15)
+        else
+            -- Final layer click action (Unchanged behavior)
+            killScriptButton.Text = "NULLIFYING REALITY..."
+            killScriptButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
+            task.spawn(function()
+                task.wait(0.2)
+                terminateScript()
             end)
         end
     end)
