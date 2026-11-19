@@ -1,5 +1,6 @@
 -- Target Engine: Roblox Luau
--- Updated: Scoped auto-load to only execute when rejoining / server-hopping / redirecting within the same PlaceId.
+-- Updated: Enforced single active script instance, renamed termination button to "Expurgate Sins",
+-- and ensured existing instances & ESP artifacts are purged on cleanup.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -8,6 +9,15 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local StarterGui = game:GetService("StarterGui")
+
+local env = (type(getgenv) == "function" and getgenv()) or _G
+
+-- Terminate any previously running script instance so only one copy can exist at a time
+if env.CultOfEntropyInstance and type(env.CultOfEntropyInstance.Terminate) == "function" then
+    pcall(function()
+        env.CultOfEntropyInstance.Terminate()
+    end)
+end
 
 local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
 if queueOnTeleport then
@@ -68,24 +78,38 @@ if not guiParent then
     return
 end
 
-local env = (type(getgenv) == "function" and getgenv()) or _G
-
-local function destroyExistingGui(parent)
+local function destroyExistingGuiInContainer(parent)
     if not parent then return end
     pcall(function()
-        local existing = parent:FindFirstChild("RayfieldStyleGui")
-        if existing then existing:Destroy() end
+        for _, child in ipairs(parent:GetChildren()) do
+            if child.Name == "RayfieldStyleGui" or child.Name == "ESPContainerFolder" then
+                child:Destroy()
+            end
+        end
     end)
 end
 
-destroyExistingGui(CoreGui)
-pcall(function()
-    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
-    destroyExistingGui(pg)
-end)
+local function destroyAllExistingGuis()
+    destroyExistingGuiInContainer(guiParent)
+    destroyExistingGuiInContainer(CoreGui)
+    pcall(function()
+        local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        destroyExistingGuiInContainer(pg)
+    end)
+    pcall(function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if obj.Name == "UniversalBodyPartHighlight" then
+                obj:Destroy()
+            end
+        end
+    end)
+end
+
+destroyAllExistingGuis()
 
 -- Grouped State & Config Tables (Prevents Luau 200-local limit error)
 local State = {
+    isTerminated = false,
     hoverEnabled = false,
     flyEnabled = false,
     swimEnabled = false,
@@ -126,6 +150,13 @@ local TargetCheckboxes = {}
 local espCache = {}
 local statLabels = {}
 
+local function trackConnection(conn)
+    if typeof(conn) == "RBXScriptConnection" then
+        table.insert(Connections, conn)
+    end
+    return conn
+end
+
 env.OldPos = nil
 env.FPDH = (pcall(function() return Workspace.FallenPartsDestroyHeight end) and Workspace.FallenPartsDestroyHeight) or -500
 
@@ -157,6 +188,7 @@ local originalCameraSettings = {
 }
 
 local function notify(title, text, duration)
+    if State.isTerminated then return end
     pcall(function()
         StarterGui:SetCore("SendNotification", {
             Title = title,
@@ -469,22 +501,43 @@ settingsSpacer.BorderSizePixel = 0
 settingsSpacer.LayoutOrder = 9
 settingsSpacer.Parent = settingsContainer
 
-local killScriptButton = createButton(settingsContainer, "Purge & Terminate Script", Color3.fromRGB(250, 40, 40), 10)
+local killScriptButton = createButton(settingsContainer, "Expurgate Sins", Color3.fromRGB(250, 40, 40), 10)
 
 local function terminateScript()
+    if State.isTerminated then return end
+    State.isTerminated = true
+    State.FlingActive = false
+    State.hoverEnabled = false
+    State.flyEnabled = false
+    State.swimEnabled = false
+    State.seatedSwimEnabled = false
+    State.spinEnabled = false
+    State.noclipEnabled = false
+    State.infJumpEnabled = false
+    State.joystickEnabled = false
+    State.humEspEnabled = false
+
     for _, conn in pairs(Connections) do
         if typeof(conn) == "RBXScriptConnection" then
             pcall(function() conn:Disconnect() end)
         end
     end
-    Connections = {}
+    table.clear(Connections)
 
     for _, obj in pairs(Physics) do
         if typeof(obj) == "Instance" then
             pcall(function() obj:Destroy() end)
         end
     end
-    Physics = {}
+    table.clear(Physics)
+
+    for model, data in pairs(espCache) do
+        if data then
+            if data.Folder then pcall(function() data.Folder:Destroy() end) end
+            if data.Highlight then pcall(function() data.Highlight:Destroy() end) end
+        end
+        espCache[model] = nil
+    end
 
     pcall(function()
         Lighting.Brightness = originalLighting.Brightness
@@ -513,7 +566,18 @@ local function terminateScript()
     pcall(function()
         if screenGui then screenGui:Destroy() end
     end)
+
+    destroyAllExistingGuis()
+
+    if env.CultOfEntropyInstance and env.CultOfEntropyInstance.Id == State then
+        env.CultOfEntropyInstance = nil
+    end
 end
+
+env.CultOfEntropyInstance = {
+    Id = State,
+    Terminate = terminateScript
+}
 
 do
     local killClickCount = 0
@@ -541,13 +605,13 @@ do
         task.delay(0.8, function()
             if killClickCount == currentKillId and killClickCount < 10 then
                 killClickCount = 0
-                killScriptButton.Text = "Purge & Terminate Script"
+                killScriptButton.Text = "Expurgate Sins"
                 killScriptButton.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
             end
         end)
 
         if killClickCount < 10 then
-            killScriptButton.Text = chantPhrases[killClickCount] or string.format("Terminate Script? (%d/10 clicks)", killClickCount)
+            killScriptButton.Text = chantPhrases[killClickCount] or string.format("Expurgate Sins? (%d/10 clicks)", killClickCount)
             killScriptButton.BackgroundColor3 = Color3.fromRGB(math.min(20 + (killClickCount * 18), 180), 10, 15)
         else
             killScriptButton.Text = "NULLIFYING REALITY..."
@@ -872,6 +936,7 @@ end
 
 local clonedAvatarModel = nil
 local function updateAvatarPreview()
+    if State.isTerminated then return end
     pcall(function()
         if clonedAvatarModel then clonedAvatarModel:Destroy() clonedAvatarModel = nil end
         local char = LocalPlayer.Character
@@ -891,10 +956,10 @@ local function updateAvatarPreview()
     end)
 end
 
-LocalPlayer.CharacterAdded:Connect(function()
+trackConnection(LocalPlayer.CharacterAdded:Connect(function()
     task.wait(1)
     updateAvatarPreview()
-end)
+end))
 task.defer(updateAvatarPreview)
 
 local hoverButton = createButton(playerContainer, "Suspension Over The Void: OFF", Color3.fromRGB(230, 140, 140), 2)
@@ -1004,7 +1069,8 @@ end
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
-RunService.RenderStepped:Connect(function(dt)
+trackConnection(RunService.RenderStepped:Connect(function(dt)
+    if State.isTerminated then return end
     local fps = dt > 0 and math.floor(1 / dt) or 60
     topBarFpsLabel.Text = "FPS: " .. fps
     topBarFpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(255, 100, 100) or (fps >= 30 and Color3.fromRGB(255, 180, 100) or Color3.fromRGB(255, 50, 50))
@@ -1055,11 +1121,11 @@ RunService.RenderStepped:Connect(function(dt)
             end
         end)
     end
-end)
+end))
 
 -- ESP System
 local function createESPForModel(model)
-    if espCache[model] or model == LocalPlayer.Character then return end
+    if State.isTerminated or espCache[model] or model == LocalPlayer.Character then return end
 
     local espFolder = Instance.new("Folder")
     espFolder.Name = "ESPContainerFolder"
@@ -1139,17 +1205,19 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     if obj:IsA("Humanoid") and obj.Parent then createESPForModel(obj.Parent) end
 end
 
-Workspace.DescendantAdded:Connect(function(descendant)
+trackConnection(Workspace.DescendantAdded:Connect(function(descendant)
+    if State.isTerminated then return end
     if descendant:IsA("Humanoid") and descendant.Parent then createESPForModel(descendant.Parent) end
-end)
+end))
 
-Workspace.DescendantRemoving:Connect(function(descendant)
+trackConnection(Workspace.DescendantRemoving:Connect(function(descendant)
+    if State.isTerminated then return end
     if descendant:IsA("Humanoid") and descendant.Parent then removeESPForModel(descendant.Parent) end
-end)
+end))
 
 local cornersBuffer = table.create(8)
-RunService.RenderStepped:Connect(function()
-    if not State.humEspEnabled then return end
+trackConnection(RunService.RenderStepped:Connect(function()
+    if State.isTerminated or not State.humEspEnabled then return end
     local cam = getActiveCamera()
     if not cam then return end
 
@@ -1254,7 +1322,7 @@ RunService.RenderStepped:Connect(function()
             data.HealthBarBg.Visible = false
         end
     end
-end)
+end))
 
 debugButton.MouseButton1Click:Connect(function()
     for model, _ in pairs(espCache) do removeESPForModel(model) end
@@ -1397,6 +1465,7 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
 end
 
 RefreshTargetLists = function()
+    if State.isTerminated then return end
     TargetCheckboxes = {}
     local pTargets, eTargets = GetCategorizedTargets()
     local filterText = searchBox.Text:lower()
@@ -1483,6 +1552,7 @@ local function suppressSwimAnimations(humanoid)
 end
 
 local function SkidSelectionAxisFlingModel(TargetData)
+    if State.isTerminated then return end
     local Character = LocalPlayer.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
     local RootPart = (Humanoid and Humanoid.RootPart) or getCharacterRoot(Character)
@@ -1660,7 +1730,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
             else
                 break
             end
-        until startTime + 1.6 < tick() or not State.FlingActive
+        until startTime + 1.6 < tick() or not State.FlingActive or State.isTerminated
 
         if animSuppressConn then animSuppressConn:Disconnect() end
         if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) Physics.flingSwimBv = nil end
@@ -1719,7 +1789,7 @@ local function ReturnToOriginalPosition()
 end
 
 startFlingBtn.MouseButton1Click:Connect(function()
-    if State.FlingActive then return end
+    if State.FlingActive or State.isTerminated then return end
     local root = getCharacterRoot(LocalPlayer.Character)
     if root then env.OldPos = root.CFrame end
 
@@ -1734,7 +1804,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
         notify("Futile", "Initiating Absolute Destruction", 2)
 
         task.spawn(function()
-            while State.FlingActive do
+            while State.FlingActive and not State.isTerminated do
                 local currentNearest = GetNearestSingleTarget()
                 if currentNearest and currentNearest.Model and currentNearest.Model.Parent then
                     SkidSelectionAxisFlingModel(currentNearest)
@@ -1757,7 +1827,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
         notify("Futile", "Initiating Absolute Destruction", 2)
 
         task.spawn(function()
-            while State.FlingActive do
+            while State.FlingActive and not State.isTerminated do
                 for key, targetData in pairs(SelectedTargets) do
                     if not targetData.Model or not targetData.Model.Parent then
                         SelectedTargets[key] = nil
@@ -1766,7 +1836,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
                 end
 
                 for _, targetData in pairs(SelectedTargets) do
-                    if State.FlingActive then
+                    if State.FlingActive and not State.isTerminated then
                         SkidSelectionAxisFlingModel(targetData)
                         task.wait(0.03)
                     else
@@ -1790,7 +1860,7 @@ stopFlingBtn.MouseButton1Click:Connect(function()
 end)
 
 task.spawn(function()
-    while screenGui.Parent do
+    while screenGui.Parent and not State.isTerminated do
         if not State.FlingActive and combatContainer.Visible then RefreshTargetLists() end
         task.wait(3)
     end
@@ -1832,7 +1902,8 @@ local function startFly()
     Physics.bv.Velocity, Physics.bv.MaxForce = Vector3.new(), Vector3.new(9e4, 9e4, 9e4)
 
     if Connections.fly then Connections.fly:Disconnect() end
-    Connections.fly = RunService.RenderStepped:Connect(function()
+    Connections.fly = trackConnection(RunService.RenderStepped:Connect(function()
+        if State.isTerminated then stopFly() return end
         local currentHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         local cam = getActiveCamera()
         if not currentHum or not cam then stopFly() return end
@@ -1868,7 +1939,7 @@ local function startFly()
         end
 
         Physics.bv.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * State.flySpeed or Vector3.new(0, 0.1, 0)
-    end)
+    end))
 end
 
 stopFly = function()
@@ -1882,14 +1953,14 @@ end
 -- Unconstrained Vortex Spin Mechanics
 local function startSpin()
     if Connections.spin then Connections.spin:Disconnect() end
-    Connections.spin = RunService.RenderStepped:Connect(function(dt)
-        if not State.spinEnabled then return end
+    Connections.spin = trackConnection(RunService.RenderStepped:Connect(function(dt)
+        if State.isTerminated or not State.spinEnabled then return end
         local char = LocalPlayer.Character
         local root = getCharacterRoot(char)
         if root then
             root.CFrame = root.CFrame * CFrame.Angles(0, State.avatarSpinSpeed * dt, 0)
         end
-    end)
+    end))
 end
 
 local function stopSpin()
@@ -1899,8 +1970,8 @@ end
 -- Seated Glide with Enforced Seated Status & Trench-Walker 3D Physics
 startSeatedSwim = function()
     if Connections.seatedSwim then Connections.seatedSwim:Disconnect() end
-    Connections.seatedSwim = RunService.Heartbeat:Connect(function()
-        if not State.seatedSwimEnabled then return end
+    Connections.seatedSwim = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated or not State.seatedSwimEnabled then return end
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
         local root = getCharacterRoot(char)
@@ -1951,7 +2022,7 @@ startSeatedSwim = function()
         else
             Physics.seatedSwimBv.Velocity = Vector3.new(0, 0, 0)
         end
-    end)
+    end))
 end
 
 stopSeatedSwim = function()
@@ -1973,13 +2044,15 @@ for _, obj in ipairs(Workspace:GetDescendants()) do
     if isWaterPart(obj) then State.cachedWaterCount = State.cachedWaterCount + 1 end
 end
 
-Workspace.DescendantAdded:Connect(function(obj)
+trackConnection(Workspace.DescendantAdded:Connect(function(obj)
+    if State.isTerminated then return end
     if isWaterPart(obj) then State.cachedWaterCount = State.cachedWaterCount + 1 end
-end)
+end))
 
-Workspace.DescendantRemoving:Connect(function(obj)
+trackConnection(Workspace.DescendantRemoving:Connect(function(obj)
+    if State.isTerminated then return end
     if isWaterPart(obj) then State.cachedWaterCount = math.max(0, State.cachedWaterCount - 1) end
-end)
+end))
 
 local function startSwim()
     local char = LocalPlayer.Character
@@ -1999,7 +2072,8 @@ local function startSwim()
     Physics.swimBv.Parent = root
 
     if Connections.swim then Connections.swim:Disconnect() end
-    Connections.swim = RunService.Heartbeat:Connect(function()
+    Connections.swim = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated then return end
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
         local currentRoot = getCharacterRoot(currentChar)
@@ -2048,7 +2122,7 @@ local function startSwim()
         else
             Physics.swimBv.Velocity = State.cachedWaterCount > 0 and Vector3.new(0, -2, 0) or Vector3.new(0, 0, 0)
         end
-    end)
+    end))
 end
 
 local function stopSwim()
@@ -2065,14 +2139,15 @@ end
 
 local function startNoclip()
     if Connections.noclip then Connections.noclip:Disconnect() end
-    Connections.noclip = RunService.Stepped:Connect(function()
+    Connections.noclip = trackConnection(RunService.Stepped:Connect(function()
+        if State.isTerminated then return end
         local char = LocalPlayer.Character
         if char then
             for _, part in ipairs(char:GetDescendants()) do
                 if part:IsA("BasePart") then part.CanCollide = false end
             end
         end
-    end)
+    end))
 end
 
 local function stopNoclip()
@@ -2087,10 +2162,11 @@ end
 
 local function startInfJump()
     if Connections.infJump then Connections.infJump:Disconnect() end
-    Connections.infJump = UserInputService.JumpRequest:Connect(function()
+    Connections.infJump = trackConnection(UserInputService.JumpRequest:Connect(function()
+        if State.isTerminated then return end
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end) end
-    end)
+    end))
 end
 
 local function stopInfJump()
@@ -2114,25 +2190,25 @@ joystickFrame.InputBegan:Connect(function(input)
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
+trackConnection(UserInputService.InputChanged:Connect(function(input)
     if State.joystickDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
         updateJoystickPos(Vector2.new(input.Position.X, input.Position.Y))
     end
-end)
+end))
 
-UserInputService.InputEnded:Connect(function(input)
+trackConnection(UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         State.joystickDragging = false
         joystickThumb.Position = UDim2.new(0.5, -25, 0.5, -25)
         State.joystickDir = Vector2.new(0, 0)
     end
-end)
+end))
 
 local function startJoystick()
     joystickFrame.Visible = true
     if Connections.joystick then Connections.joystick:Disconnect() end
-    Connections.joystick = RunService.RenderStepped:Connect(function()
-        if not State.joystickEnabled or State.flyEnabled or State.swimEnabled then return end
+    Connections.joystick = trackConnection(RunService.RenderStepped:Connect(function()
+        if State.isTerminated or not State.joystickEnabled or State.flyEnabled or State.swimEnabled then return end
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
         local cam = getActiveCamera()
         if hum and cam and State.joystickDir.Magnitude > 0 then
@@ -2140,7 +2216,7 @@ local function startJoystick()
             local moveDir = Vector3.new(camCF.RightVector.X * State.joystickDir.X + camCF.LookVector.X * State.joystickDir.Y, 0, camCF.RightVector.Z * State.joystickDir.X + camCF.LookVector.Z * State.joystickDir.Y)
             if moveDir.Magnitude > 0 then pcall(function() hum:Move(moveDir.Unit, false) end) end
         end
-    end)
+    end))
 end
 
 local function stopJoystick()
@@ -2158,7 +2234,8 @@ startCameraZoom = function()
         LocalPlayer.CameraMinZoomDistance = 0.5
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
     end)
-    Connections.cameraZoom = RunService.Heartbeat:Connect(function()
+    Connections.cameraZoom = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated then return end
         if State.cameraZoomEnabled then
             pcall(function()
                 if LocalPlayer.CameraMaxZoomDistance ~= 999999 then
@@ -2166,7 +2243,7 @@ startCameraZoom = function()
                 end
             end)
         end
-    end)
+    end))
 end
 
 stopCameraZoom = function()
@@ -2184,7 +2261,8 @@ end
 
 local function startPausedScreenRemoval()
     if Connections.pausedScreen then Connections.pausedScreen:Disconnect() end
-    Connections.pausedScreen = RunService.Heartbeat:Connect(function()
+    Connections.pausedScreen = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated then return end
         pcall(function()
             local robloxGui = CoreGui:FindFirstChild("RobloxGui")
             if robloxGui and robloxGui:FindFirstChild("Modules") and robloxGui.Modules:FindFirstChild("NetworkPauseNotification") then
@@ -2193,7 +2271,7 @@ local function startPausedScreenRemoval()
             local directPause = CoreGui:FindFirstChild("RobloxNetworkPauseNotification")
             if directPause then directPause:Destroy() end
         end)
-    end)
+    end))
 end
 startPausedScreenRemoval()
 
@@ -2207,12 +2285,13 @@ local function startNoTexture()
         end
         Lighting.GlobalShadows, Lighting.FogEnd = false, 9e9
     end)
-    Connections.noTexture = Workspace.DescendantAdded:Connect(function(obj)
+    Connections.noTexture = trackConnection(Workspace.DescendantAdded:Connect(function(obj)
+        if State.isTerminated then return end
         pcall(function()
             if obj:IsA("BasePart") then obj.Material, obj.Reflectance = Enum.Material.SmoothPlastic, 0
             elseif obj:IsA("Decal") or obj:IsA("Texture") then obj.Transparency = 1 end
         end)
-    end)
+    end))
 end
 
 local function stopNoTexture()
@@ -2224,14 +2303,15 @@ end
 
 local function startNoFog()
     if Connections.noFog then Connections.noFog:Disconnect() end
-    Connections.noFog = RunService.Heartbeat:Connect(function()
+    Connections.noFog = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated then return end
         pcall(function()
             Lighting.FogEnd, Lighting.FogStart = 9e9, 9e9
             for _, child in ipairs(Lighting:GetChildren()) do
                 if child:IsA("Atmosphere") then child.Density = 0 end
             end
         end)
-    end)
+    end))
 end
 
 local function stopNoFog()
@@ -2243,11 +2323,12 @@ end
 
 local function startFullBright()
     if Connections.fullBright then Connections.fullBright:Disconnect() end
-    Connections.fullBright = RunService.Heartbeat:Connect(function()
+    Connections.fullBright = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated then return end
         pcall(function()
             Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.OutdoorAmbient = 2, 14, false, Color3.fromRGB(255, 255, 255)
         end)
-    end)
+    end))
 end
 
 local function stopFullBright()
@@ -2411,12 +2492,12 @@ do
         end
     end)
 
-    UserInputService.InputChanged:Connect(function()
+    trackConnection(UserInputService.InputChanged:Connect(function()
         if dragInput and dragging then
             local delta = dragInput.Position - dragStart
             mainWindow.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
         end
-    end)
+    end))
 end
 
 closeButton.MouseButton1Click:Connect(function()
