@@ -1,6 +1,6 @@
 -- Target Engine: Roblox Luau
--- Updated: Enforced single active script instance, renamed termination button to "Expurgate Sins",
--- and ensured existing instances & ESP artifacts are purged on cleanup.
+-- Updated: Wired peakFlingModel and stopFlingController directly into the Ritual tab
+-- start/stop buttons with single-instance fling lock and clean restoration.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -136,11 +136,22 @@ local State = {
     spinSpeed = 999999999999999,
     orbitSpeed = 999999999999999,
     FlingActive = false,
+    flingRunToken = 0,
     currentDirIndex = 1,
     joystickDir = Vector2.new(0, 0),
     joystickDragging = false,
     orbitAngleCounter = 0,
     cachedWaterCount = 0
+}
+
+local FlingConfig = {
+    ImpulseMagnitude = 1.25e6,
+    AngularVelocityMagnitude = 1.5e5,
+    EarlyExitSpeed = 135,
+    MaxLungeSeconds = 1.15,
+    MaxLeadSeconds = 0.45,
+    OrbitRadius = 0.35,
+    OrbitStep = 0.55
 }
 
 local Connections = {}
@@ -217,6 +228,7 @@ local startSpin
 local stopSpin
 local startCameraZoom
 local stopCameraZoom
+local stopFlingController
 
 -- UI Helper Functions
 local function addCorner(parent, radius)
@@ -506,7 +518,13 @@ local killScriptButton = createButton(settingsContainer, "Expurgate Sins", Color
 local function terminateScript()
     if State.isTerminated then return end
     State.isTerminated = true
-    State.FlingActive = false
+
+    if stopFlingController then
+        pcall(stopFlingController)
+    else
+        State.FlingActive = false
+    end
+
     State.hoverEnabled = false
     State.flyEnabled = false
     State.swimEnabled = false
@@ -571,6 +589,9 @@ local function terminateScript()
 
     if env.CultOfEntropyInstance and env.CultOfEntropyInstance.Id == State then
         env.CultOfEntropyInstance = nil
+    end
+    if env.CultOfEntropyFling and env.CultOfEntropyFling.Id == State then
+        env.CultOfEntropyFling = nil
     end
 end
 
@@ -1333,7 +1354,7 @@ debugButton.MouseButton1Click:Connect(function()
     notify("Ritual Purge", "ESP cache cleansed, targets summoned anew.", 3)
 end)
 
--- Target List & Fling Logic
+-- Target List & Peak-State Fling Logic
 local function GetCategorizedTargets()
     local playerTargets, entityTargets = {}, {}
     local localChar = LocalPlayer.Character
@@ -1551,24 +1572,83 @@ local function suppressSwimAnimations(humanoid)
     end
 end
 
-local function SkidSelectionAxisFlingModel(TargetData)
-    if State.isTerminated then return end
+local function clearFlingMovers()
+    for _, key in ipairs({ "flingSwimBv", "flingBodyVel", "flingBodyAngVel" }) do
+        if Physics[key] then
+            pcall(function() Physics[key]:Destroy() end)
+            Physics[key] = nil
+        end
+    end
+end
+
+local function computePredictedTargetPos(rootPart, targetPart, targetHum, lastVel, dt)
+    local actualPos = targetPart.Position
+    local targetVel = targetPart.AssemblyLinearVelocity
+    if not State.movementPredictorEnabled or targetVel.Magnitude < 0.25 then
+        return actualPos, targetVel
+    end
+
+    local dist = (rootPart.Position - actualPos).Magnitude
+    local okPing, rawPing = pcall(function() return LocalPlayer:GetNetworkPing() end)
+    local pingOffset = okPing and math.clamp(rawPing or 0.05, 0, 0.22) or 0.05
+
+    local distFactor = math.clamp((dist - 1.5) / 45, 0, 1)
+    local speedFactor = math.clamp(targetVel.Magnitude / 24, 0.35, 1.4)
+    local leadTime = math.clamp((distFactor * 0.32 * speedFactor) + (pingOffset * 0.85), 0, FlingConfig.MaxLeadSeconds)
+
+    local accel = (targetVel - lastVel) / math.max(dt, 1 / 240)
+    if accel.Magnitude > 0.1 and targetVel.Unit:Dot(accel.Unit) < -0.2 then
+        leadTime = leadTime * 0.5
+    end
+
+    local isAirborne = false
+    if targetHum then
+        local okFloor, floorMat = pcall(function() return targetHum.FloorMaterial end)
+        isAirborne = (okFloor and floorMat == Enum.Material.Air) or math.abs(targetVel.Y) > 2
+    end
+
+    local horizOffset = Vector3.new(targetVel.X, 0, targetVel.Z) * leadTime
+    local vertY = isAirborne
+        and ((targetVel.Y * leadTime) - (0.5 * (Workspace.Gravity or 196.2) * leadTime * leadTime))
+        or (targetVel.Y * leadTime)
+
+    return actualPos + Vector3.new(horizOffset.X, vertY, horizOffset.Z), targetVel
+end
+
+local function computeLaunchVelocity(modeName, massScale)
+    local mag = FlingConfig.ImpulseMagnitude * massScale
+    if modeName == "The Skies" then
+        return Vector3.new(0, mag, 0)
+    elseif modeName == "The Abyss" then
+        return Vector3.new(0, -mag, 0)
+    end
+    return Vector3.new(
+        math.random(-mag, mag),
+        math.random(-mag, mag),
+        math.random(-mag, mag)
+    )
+end
+
+local function peakFlingModel(targetData, runToken)
+    if State.isTerminated or not State.FlingActive or State.flingRunToken ~= runToken then return end
+
     local Character = LocalPlayer.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
     local RootPart = (Humanoid and Humanoid.RootPart) or getCharacterRoot(Character)
-    local TCharacter = TargetData.Model
+    local TCharacter = targetData and targetData.Model
     local cam = getActiveCamera()
 
     if not TCharacter or not TCharacter.Parent then return end
 
-    local THumanoid = TargetData.Humanoid
+    local THumanoid = targetData.Humanoid
     if isTargetAnchored(TCharacter, THumanoid) then return end
 
     local TRootPart = (THumanoid and THumanoid.RootPart) or getCharacterRoot(TCharacter)
     local seatPart = THumanoid and THumanoid.SeatPart
     local targetPart = seatPart or TRootPart or TCharacter:FindFirstChild("Head") or TCharacter:FindFirstChildWhichIsA("BasePart")
+    if not targetPart then return end
 
-    if targetPart and cam then
+    if cam then
         pcall(function()
             cam.CameraType = Enum.CameraType.Custom
             LocalPlayer.CameraMaxZoomDistance = 999999
@@ -1577,102 +1657,23 @@ local function SkidSelectionAxisFlingModel(TargetData)
     end
 
     if Character and Humanoid and RootPart then
-        if not env.OldPos or RootPart.Velocity.Magnitude < 50 then
+        if not env.OldPos or RootPart.AssemblyLinearVelocity.Magnitude < 50 then
             env.OldPos = RootPart.CFrame
         end
 
-        local baseTargetPart = TCharacter:FindFirstChildWhichIsA("BasePart")
-        if not baseTargetPart then return end
+        clearFlingMovers()
 
-        local exponentialMultiplier = math.clamp(math.pow(GetModelMass(TCharacter), 1.3), 1, 50)
-        local lastTargetVel = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity) or Vector3.new()
-        local lastSampleTime = tick()
+        local bv = Instance.new("BodyVelocity")
+        bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+        bv.Velocity = Vector3.zero
+        bv.Parent = RootPart
+        Physics.flingBodyVel = bv
 
-        local function FPosAxis(BasePart)
-            local now = tick()
-            local dt = math.max(now - lastSampleTime, 1 / 240)
-            lastSampleTime = now
-
-            local selectedMode = FlingDirections[State.currentDirIndex]
-            local velocityTarget = Vector3.new()
-
-            State.orbitAngleCounter = State.orbitAngleCounter + State.orbitSpeed
-            local offsetX = math.cos(State.orbitAngleCounter) * 0.45
-            local offsetZ = math.sin(State.orbitAngleCounter) * 0.45
-
-            local actualTargetPos = (seatPart and seatPart.Position) or (TRootPart and TRootPart.Position) or BasePart.Position
-            local targetVelocity = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity) or Vector3.new()
-
-            local predictedPos = actualTargetPos
-            if State.movementPredictorEnabled and targetVelocity.Magnitude > 0.25 then
-                local dist = (RootPart.Position - actualTargetPos).Magnitude
-                local okPing, rawPing = pcall(function() return LocalPlayer:GetNetworkPing() end)
-                local pingOffset = okPing and math.clamp(rawPing or 0.05, 0, 0.25) or 0.05
-
-                local distanceFactor = math.clamp((dist - 1.5) / 45, 0, 1)
-                local speedFactor = math.clamp(targetVelocity.Magnitude / 24, 0.4, 1.5)
-                local leadTime = math.clamp((distanceFactor * 0.35 * speedFactor) + (pingOffset * 0.85), 0, 0.5)
-
-                local accel = (targetVelocity - lastTargetVel) / dt
-                local alignment = targetVelocity.Unit:Dot(accel.Magnitude > 0.1 and accel.Unit or targetVelocity.Unit)
-                if alignment < -0.2 then
-                    leadTime = leadTime * 0.55
-                end
-
-                local horizVel = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
-                local horizAccel = Vector3.new(accel.X, 0, accel.Z)
-                local predictedHoriz = horizVel * leadTime + 0.5 * horizAccel * (leadTime * leadTime) * 0.35
-
-                local isAirborne = false
-                if THumanoid then
-                    local okFloor, floorMat = pcall(function() return THumanoid.FloorMaterial end)
-                    isAirborne = (okFloor and floorMat == Enum.Material.Air) or math.abs(targetVelocity.Y) > 2
-                end
-
-                local predictedVertY = 0
-                if isAirborne then
-                    local g = Workspace.Gravity or 196.2
-                    predictedVertY = (targetVelocity.Y * leadTime) - (0.5 * g * leadTime * leadTime)
-                else
-                    predictedVertY = targetVelocity.Y * leadTime
-                end
-
-                predictedPos = actualTargetPos + Vector3.new(predictedHoriz.X, predictedVertY, predictedHoriz.Z)
-            end
-            lastTargetVel = targetVelocity
-
-            local targetDestPos = predictedPos + Vector3.new(offsetX, 0, offsetZ)
-
-            if selectedMode == "The Skies" then
-                velocityTarget = Vector3.new(0, 1.5e9, 0) * exponentialMultiplier
-            elseif selectedMode == "The Abyss" then
-                velocityTarget = Vector3.new(0, -1.5e9, 0) * exponentialMultiplier
-            elseif selectedMode == "The Null" then
-                velocityTarget = Vector3.new(math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9))
-            end
-
-            local faceCFrame = CFrame.lookAt(targetDestPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
-
-            pcall(function()
-                if State.seatedFlingEnabled then
-                    Humanoid.Sit = true
-                    RootPart.CFrame = faceCFrame
-                    RootPart.Velocity = velocityTarget
-                    RootPart.RotVelocity = Vector3.new(0, 1.5e9, 0)
-                else
-                    RootPart.CFrame = faceCFrame
-                    Character:SetPrimaryPartCFrame(faceCFrame)
-                    RootPart.Velocity = velocityTarget
-                    RootPart.RotVelocity = Vector3.new(0, 1.5e9, 0)
-                end
-            end)
-        end
-
-        pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
-        local BV = Instance.new("BodyVelocity")
-        BV.Parent = RootPart
-        BV.Velocity = Vector3.new()
-        BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
+        local bav = Instance.new("BodyAngularVelocity")
+        bav.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
+        bav.AngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
+        bav.Parent = RootPart
+        Physics.flingBodyAngVel = bav
 
         local animSuppressConn
         if State.seatedFlingEnabled then
@@ -1699,49 +1700,64 @@ local function SkidSelectionAxisFlingModel(TargetData)
             end
         end
 
-        if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) end
-        Physics.flingSwimBv = Instance.new("BodyVelocity")
-        Physics.flingSwimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
-        Physics.flingSwimBv.Velocity = Vector3.new(0, 0, 0)
-        Physics.flingSwimBv.Parent = RootPart
+        pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
 
-        local startTime = tick()
-        repeat
-            if RootPart and THumanoid then
-                if State.seatedFlingEnabled then
-                    pcall(function() Humanoid.Sit = true end)
-                else
-                    pcall(function()
-                        if Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
-                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
-                            Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
-                        end
-                    end)
-                    suppressSwimAnimations(Humanoid)
-                end
-                FPosAxis(targetPart)
+        local massScale = math.clamp(math.pow(GetModelMass(TCharacter), 1.15), 1, 25)
+        local lastVel = targetPart.AssemblyLinearVelocity
+        local lastSample = tick()
+        local startedAt = lastSample
 
-                local checkVel = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity)
-                if checkVel and checkVel.Magnitude > 140 then
-                    break
-                end
-
-                RunService.Heartbeat:Wait()
-            else
+        while State.FlingActive and not State.isTerminated and State.flingRunToken == runToken do
+            if not TCharacter.Parent or isTargetAnchored(TCharacter, THumanoid) then
                 break
             end
-        until startTime + 1.6 < tick() or not State.FlingActive or State.isTerminated
+            if (tick() - startedAt) >= FlingConfig.MaxLungeSeconds then
+                break
+            end
 
-        if animSuppressConn then animSuppressConn:Disconnect() end
-        if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) Physics.flingSwimBv = nil end
-        pcall(function() BV:Destroy() end)
+            local now = tick()
+            local dt = now - lastSample
+            lastSample = now
 
-        if State.seatedFlingEnabled then
+            local predictedPos, currentVel = computePredictedTargetPos(RootPart, targetPart, THumanoid, lastVel, dt)
+            lastVel = currentVel
+
+            if currentVel.Magnitude >= FlingConfig.EarlyExitSpeed then
+                break
+            end
+
+            State.orbitAngleCounter = State.orbitAngleCounter + FlingConfig.OrbitStep
+            local microOffset = Vector3.new(
+                math.cos(State.orbitAngleCounter) * FlingConfig.OrbitRadius,
+                0,
+                math.sin(State.orbitAngleCounter) * FlingConfig.OrbitRadius
+            )
+
+            local contactPos = predictedPos + microOffset
+            local contactCFrame = CFrame.lookAt(contactPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
+            local launchVel = computeLaunchVelocity(FlingDirections[State.currentDirIndex], massScale)
+
             pcall(function()
-                Humanoid.Sit = true
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+                if State.seatedFlingEnabled then
+                    Humanoid.Sit = true
+                elseif Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+                    Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+                end
+                RootPart.CFrame = contactCFrame
+                RootPart.AssemblyLinearVelocity = launchVel
+                RootPart.AssemblyAngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
+                bv.Velocity = launchVel
             end)
-        else
+
+            RunService.Heartbeat:Wait()
+        end
+
+        if animSuppressConn then
+            pcall(function() animSuppressConn:Disconnect() end)
+        end
+        clearFlingMovers()
+
+        if not State.seatedFlingEnabled then
             pcall(function()
                 Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
                 Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
@@ -1752,7 +1768,7 @@ local function SkidSelectionAxisFlingModel(TargetData)
 end
 
 local function ReturnToOriginalPosition()
-    if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) Physics.flingSwimBv = nil end
+    clearFlingMovers()
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local rootPart = (humanoid and humanoid.RootPart) or getCharacterRoot(character)
@@ -1763,21 +1779,26 @@ local function ReturnToOriginalPosition()
             pcall(function()
                 if State.seatedFlingEnabled and humanoid then
                     humanoid.Sit = true
-                end
-                rootPart.CFrame = env.OldPos * CFrame.new(0, 0.5, 0)
-                character:SetPrimaryPartCFrame(env.OldPos * CFrame.new(0, 0.5, 0))
-                if not State.seatedFlingEnabled and humanoid then
+                elseif humanoid then
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+                    humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
                     humanoid:ChangeState("GettingUp")
                 end
-                for _, part in pairs(character:GetChildren()) do
-                    if part:IsA("BasePart") then part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new() end
+                rootPart.CFrame = env.OldPos * CFrame.new(0, 0.5, 0)
+                rootPart.AssemblyLinearVelocity = Vector3.zero
+                rootPart.AssemblyAngularVelocity = Vector3.zero
+                for _, part in ipairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then
+                        part.Velocity = Vector3.zero
+                        part.RotVelocity = Vector3.zero
+                    end
                 end
             end)
             task.wait()
-        until (rootPart.Position - env.OldPos.p).Magnitude < 15 or (tick() - startTime) > 2
-
-        pcall(function() Workspace.FallenPartsDestroyHeight = env.FPDH end)
+        until (rootPart.Position - env.OldPos.Position).Magnitude < 12 or (tick() - startTime) > 1.5
     end
+
+    pcall(function() Workspace.FallenPartsDestroyHeight = env.FPDH end)
 
     local cam = getActiveCamera()
     if cam and humanoid then
@@ -1788,8 +1809,31 @@ local function ReturnToOriginalPosition()
     end
 end
 
+stopFlingController = function()
+    State.flingRunToken = State.flingRunToken + 1
+    State.FlingActive = false
+    if UpdateFlingStatus then
+        pcall(UpdateFlingStatus)
+    end
+    ReturnToOriginalPosition()
+end
+
+if env.CultOfEntropyFling and type(env.CultOfEntropyFling.Stop) == "function" then
+    pcall(env.CultOfEntropyFling.Stop)
+end
+
+env.CultOfEntropyFling = {
+    Id = State,
+    Stop = stopFlingController
+}
+
 startFlingBtn.MouseButton1Click:Connect(function()
-    if State.FlingActive or State.isTerminated then return end
+    if State.isTerminated then return end
+
+    if env.CultOfEntropyFling and type(env.CultOfEntropyFling.Stop) == "function" then
+        pcall(env.CultOfEntropyFling.Stop)
+    end
+
     local root = getCharacterRoot(LocalPlayer.Character)
     if root then env.OldPos = root.CFrame end
 
@@ -1799,20 +1843,25 @@ startFlingBtn.MouseButton1Click:Connect(function()
             notify("Insufficient", "No valid souls found in the void!", 2)
             return
         end
+
+        State.flingRunToken = State.flingRunToken + 1
+        local activeToken = State.flingRunToken
         State.FlingActive = true
         UpdateFlingStatus()
         notify("Futile", "Initiating Absolute Destruction", 2)
 
         task.spawn(function()
-            while State.FlingActive and not State.isTerminated do
+            while State.FlingActive and not State.isTerminated and State.flingRunToken == activeToken do
                 local currentNearest = GetNearestSingleTarget()
                 if currentNearest and currentNearest.Model and currentNearest.Model.Parent then
-                    SkidSelectionAxisFlingModel(currentNearest)
+                    peakFlingModel(currentNearest, activeToken)
                 end
                 UpdateFlingStatus()
                 task.wait(0.05)
             end
-            ReturnToOriginalPosition()
+            if State.flingRunToken == activeToken then
+                stopFlingController()
+            end
         end)
     else
         local count = 0
@@ -1822,12 +1871,14 @@ startFlingBtn.MouseButton1Click:Connect(function()
             return
         end
 
+        State.flingRunToken = State.flingRunToken + 1
+        local activeToken = State.flingRunToken
         State.FlingActive = true
         UpdateFlingStatus()
         notify("Futile", "Initiating Absolute Destruction", 2)
 
         task.spawn(function()
-            while State.FlingActive and not State.isTerminated do
+            while State.FlingActive and not State.isTerminated and State.flingRunToken == activeToken do
                 for key, targetData in pairs(SelectedTargets) do
                     if not targetData.Model or not targetData.Model.Parent then
                         SelectedTargets[key] = nil
@@ -1836,27 +1887,27 @@ startFlingBtn.MouseButton1Click:Connect(function()
                 end
 
                 for _, targetData in pairs(SelectedTargets) do
-                    if State.FlingActive and not State.isTerminated then
-                        SkidSelectionAxisFlingModel(targetData)
+                    if State.FlingActive and not State.isTerminated and State.flingRunToken == activeToken then
+                        peakFlingModel(targetData, activeToken)
                         task.wait(0.03)
                     else
                         break
                     end
                 end
                 UpdateFlingStatus()
-                task.wait(0.15)
+                task.wait(0.1)
             end
-            ReturnToOriginalPosition()
+            if State.flingRunToken == activeToken then
+                stopFlingController()
+            end
         end)
     end
 end)
 
 stopFlingBtn.MouseButton1Click:Connect(function()
-    if not State.FlingActive then return end
-    State.FlingActive = false
-    UpdateFlingStatus()
+    if not State.FlingActive and (not Physics.flingBodyVel and not Physics.flingBodyAngVel and not Physics.flingSwimBv) then return end
+    stopFlingController()
     notify("Seal", "Power sealed.", 2)
-    task.spawn(ReturnToOriginalPosition)
 end)
 
 task.spawn(function()
@@ -1951,7 +2002,7 @@ stopFly = function()
 end
 
 -- Unconstrained Vortex Spin Mechanics
-local function startSpin()
+startSpin = function()
     if Connections.spin then Connections.spin:Disconnect() end
     Connections.spin = trackConnection(RunService.RenderStepped:Connect(function(dt)
         if State.isTerminated or not State.spinEnabled then return end
@@ -1963,7 +2014,7 @@ local function startSpin()
     end))
 end
 
-local function stopSpin()
+stopSpin = function()
     if Connections.spin then Connections.spin:Disconnect() Connections.spin = nil end
 end
 
