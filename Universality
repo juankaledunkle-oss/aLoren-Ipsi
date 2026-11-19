@@ -1,6 +1,10 @@
 -- Target Engine: Roblox Luau
--- Updated: Wired peakFlingModel and stopFlingController directly into the Ritual tab
--- start/stop buttons with single-instance fling lock and clean restoration.
+-- Updated: Merged Camera NoClip (Invisicam) into Astral Projection View and
+-- removed the separate Camera NoClip toggle; moved Anti-AFK, Auto-Rejoin on Kick,
+-- and Purge Ad Billboards to Settings, enabling Auto-Rejoin and Purge Ad Billboards
+-- by default with active visual styling. Removed 3D World Rendering button.
+-- Updated Goto Player into a dual-list humanoid selector (Vessels & Abominations)
+-- without enclosed parentheses.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -9,6 +13,9 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local StarterGui = game:GetService("StarterGui")
+local TeleportService = game:GetService("TeleportService")
+local GuiService = game:GetService("GuiService")
+local VirtualUser = game:GetService("VirtualUser")
 
 local env = (type(getgenv) == "function" and getgenv()) or _G
 
@@ -141,7 +148,19 @@ local State = {
     joystickDir = Vector2.new(0, 0),
     joystickDragging = false,
     orbitAngleCounter = 0,
-    cachedWaterCount = 0
+    cachedWaterCount = 0,
+    -- Settings & Codex Tab States
+    antiAfkEnabled = false,
+    autoRejoinEnabled = true,
+    clickTpEnabled = false,
+    removeAdsEnabled = true,
+    customWalkSpeedEnabled = false,
+    customWalkSpeedValue = 16,
+    customJumpEnabled = false,
+    customJumpValue = 50,
+    fovValue = 70,
+    volumeValue = 5,
+    fpsCapValue = 0
 }
 
 local FlingConfig = {
@@ -195,8 +214,12 @@ local originalLighting = {
 local originalCameraSettings = {
     CameraMode = (pcall(function() return LocalPlayer.CameraMode end) and LocalPlayer.CameraMode) or Enum.CameraMode.Classic,
     CameraMaxZoomDistance = (pcall(function() return LocalPlayer.CameraMaxZoomDistance end) and LocalPlayer.CameraMaxZoomDistance) or 128,
-    CameraMinZoomDistance = (pcall(function() return LocalPlayer.CameraMinZoomDistance end) and LocalPlayer.CameraMinZoomDistance) or 0.5
+    CameraMinZoomDistance = (pcall(function() return LocalPlayer.CameraMinZoomDistance end) and LocalPlayer.CameraMinZoomDistance) or 0.5,
+    DevCameraOcclusionMode = (pcall(function() return LocalPlayer.DevCameraOcclusionMode end) and LocalPlayer.DevCameraOcclusionMode) or Enum.DevCameraOcclusionMode.Zoom,
+    FieldOfView = (pcall(function() return getActiveCamera() and getActiveCamera().FieldOfView end) and getActiveCamera().FieldOfView) or 70
 }
+
+State.fovValue = math.clamp(math.round(originalCameraSettings.FieldOfView), 40, 120)
 
 local function notify(title, text, duration)
     if State.isTerminated then return end
@@ -220,6 +243,7 @@ end
 
 -- Forward Declarations
 local RefreshTargetLists
+local RefreshGotoLists
 local UpdateFlingStatus
 local stopFly
 local startSeatedSwim
@@ -229,6 +253,7 @@ local stopSpin
 local startCameraZoom
 local stopCameraZoom
 local stopFlingController
+local stopCodexUtilities
 
 -- UI Helper Functions
 local function addCorner(parent, radius)
@@ -298,6 +323,165 @@ local function createNumberInputRow(parent, labelText, defaultValue, accentColor
     addCorner(box, 4)
 
     return box
+end
+
+local function createTextActionRow(parent, labelText, placeholderText, actionLabel, accentColor, order)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 40)
+    container.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+    container.BackgroundTransparency = 0.3
+    container.BorderSizePixel = 0
+    container.LayoutOrder = order
+    container.Parent = parent
+    addCorner(container, 4)
+
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0.34, 0, 1, 0)
+    label.Position = UDim2.new(0, 10, 0, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamSemibold
+    label.Text = labelText
+    label.TextColor3 = Color3.fromRGB(210, 190, 185)
+    label.TextSize = 12
+    label.TextXAlignment = Enum.TextXAlignment.Left
+    label.Parent = container
+
+    local box = Instance.new("TextBox")
+    box.Size = UDim2.new(0.36, 0, 0, 28)
+    box.Position = UDim2.new(0.35, 0, 0.5, -14)
+    box.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
+    box.BorderSizePixel = 0
+    box.Font = Enum.Font.GothamBold
+    box.PlaceholderText = placeholderText
+    box.PlaceholderColor3 = Color3.fromRGB(130, 105, 110)
+    box.Text = ""
+    box.TextColor3 = accentColor
+    box.TextSize = 12
+    box.ClearTextOnFocus = false
+    box.Parent = container
+    addCorner(box, 4)
+
+    local actionBtn = Instance.new("TextButton")
+    actionBtn.Size = UDim2.new(0.25, 0, 0, 28)
+    actionBtn.Position = UDim2.new(0.73, 0, 0.5, -14)
+    actionBtn.BackgroundColor3 = Color3.fromRGB(65, 15, 22)
+    actionBtn.BorderSizePixel = 0
+    actionBtn.Font = Enum.Font.GothamBold
+    actionBtn.Text = actionLabel
+    actionBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
+    actionBtn.TextSize = 11
+    actionBtn.Parent = container
+    addCorner(actionBtn, 4)
+
+    return box, actionBtn
+end
+
+local function createSliderRow(parent, labelText, minVal, maxVal, initialVal, suffix, accentColor, order, onChanged)
+    local container = Instance.new("Frame")
+    container.Size = UDim2.new(1, 0, 0, 52)
+    container.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+    container.BackgroundTransparency = 0.3
+    container.BorderSizePixel = 0
+    container.LayoutOrder = order
+    container.Parent = parent
+    addCorner(container, 4)
+
+    local clampedInit = math.clamp(initialVal, minVal, maxVal)
+    local ratio = (maxVal > minVal) and ((clampedInit - minVal) / (maxVal - minVal)) or 0
+
+    local topLine = Instance.new("Frame")
+    topLine.Size = UDim2.new(1, -20, 0, 20)
+    topLine.Position = UDim2.new(0, 10, 0, 4)
+    topLine.BackgroundTransparency = 1
+    topLine.Parent = container
+
+    local title = Instance.new("TextLabel")
+    title.Size = UDim2.new(0.65, 0, 1, 0)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamSemibold
+    title.Text = labelText
+    title.TextColor3 = Color3.fromRGB(210, 190, 185)
+    title.TextSize = 12
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.Parent = topLine
+
+    local valueLabel = Instance.new("TextLabel")
+    valueLabel.Size = UDim2.new(0.35, 0, 1, 0)
+    valueLabel.Position = UDim2.new(0.65, 0, 0, 0)
+    valueLabel.BackgroundTransparency = 1
+    valueLabel.Font = Enum.Font.GothamBold
+    valueLabel.Text = tostring(clampedInit) .. (suffix or "")
+    valueLabel.TextColor3 = accentColor
+    valueLabel.TextSize = 12
+    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
+    valueLabel.Parent = topLine
+
+    local track = Instance.new("Frame")
+    track.Size = UDim2.new(1, -20, 0, 8)
+    track.Position = UDim2.new(0, 10, 0, 32)
+    track.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
+    track.BorderSizePixel = 0
+    track.Parent = container
+    addCorner(track, 4)
+
+    local fill = Instance.new("Frame")
+    fill.Size = UDim2.new(ratio, 0, 1, 0)
+    fill.BackgroundColor3 = Color3.fromRGB(145, 25, 35)
+    fill.BorderSizePixel = 0
+    fill.Parent = track
+    addCorner(fill, 4)
+
+    local knob = Instance.new("Frame")
+    knob.Size = UDim2.new(0, 14, 0, 14)
+    knob.AnchorPoint = Vector2.new(0.5, 0.5)
+    knob.Position = UDim2.new(ratio, 0, 0.5, 0)
+    knob.BackgroundColor3 = accentColor
+    knob.BorderSizePixel = 0
+    knob.Parent = track
+    addCorner(knob, 7)
+
+    local sliding = false
+
+    local function applyFromX(inputX)
+        local absPos = track.AbsolutePosition.X
+        local absSize = math.max(track.AbsoluteSize.X, 1)
+        local alpha = math.clamp((inputX - absPos) / absSize, 0, 1)
+        local raw = minVal + (alpha * (maxVal - minVal))
+        local stepped = math.round(raw)
+        local finalRatio = (maxVal > minVal) and ((stepped - minVal) / (maxVal - minVal)) or 0
+        fill.Size = UDim2.new(finalRatio, 0, 1, 0)
+        knob.Position = UDim2.new(finalRatio, 0, 0.5, 0)
+        valueLabel.Text = tostring(stepped) .. (suffix or "")
+        if onChanged then
+            onChanged(stepped)
+        end
+    end
+
+    track.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliding = true
+            applyFromX(input.Position.X)
+        end
+    end)
+
+    knob.InputBegan:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliding = true
+            applyFromX(input.Position.X)
+        end
+    end)
+
+    trackConnection(UserInputService.InputChanged:Connect(function(input)
+        if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+            applyFromX(input.Position.X)
+        end
+    end))
+
+    trackConnection(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+            sliding = false
+        end
+    end))
 end
 
 -- Main ScreenGui & Window Setup
@@ -408,19 +592,19 @@ local catLayout = Instance.new("UIListLayout")
 catLayout.FillDirection = Enum.FillDirection.Horizontal
 catLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 catLayout.SortOrder = Enum.SortOrder.LayoutOrder
-catLayout.Padding = UDim.new(0, 5)
+catLayout.Padding = UDim.new(0, 4)
 catLayout.Parent = categoryBar
 
 local function createTabButton(name, order)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.32, 0, 1, 0)
+    btn.Size = UDim2.new(0.24, 0, 1, 0)
     btn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     btn.BackgroundTransparency = 0.4
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = name
     btn.TextColor3 = Color3.fromRGB(190, 175, 170)
-    btn.TextSize = 13
+    btn.TextSize = 12
     btn.LayoutOrder = order
     btn.Parent = categoryBar
     addCorner(btn, 4)
@@ -430,6 +614,7 @@ end
 local espTabBtn = createTabButton("Sovereignty", 1)
 local combatTabBtn = createTabButton("Ritual", 2)
 local playerTabBtn = createTabButton("Vessel", 3)
+local codexTabBtn = createTabButton("Codex", 4)
 
 local function createTabContainer(name, canvasHeight)
     local frame = Instance.new("ScrollingFrame")
@@ -453,15 +638,19 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 1080)
 local playerContainer = createTabContainer("PlayerContainer", 1200)
-local settingsContainer = createTabContainer("SettingsContainer", 480)
+local codexContainer = createTabContainer("CodexContainer", 940)
+local settingsContainer = createTabContainer("SettingsContainer", 620)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
 espTabBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
 
 -- Settings Tab
-local debugButton = createButton(settingsContainer, "Ritual Purge & Reinitialize", Color3.fromRGB(220, 100, 100), 1)
-local resetCharButton = createButton(settingsContainer, "Sacrifice Vessel", Color3.fromRGB(240, 50, 50), 2)
+local antiAfkBtn = createButton(settingsContainer, "Anti-AFK (Idle Guard): OFF", Color3.fromRGB(230, 130, 130), 1)
+local autoRejoinBtn = createButton(settingsContainer, "Auto-Rejoin on Kick: ON", Color3.fromRGB(255, 170, 170), 2, Color3.fromRGB(90, 20, 25))
+local removeAdsBtn = createButton(settingsContainer, "Purge Ad Billboards: ON", Color3.fromRGB(255, 170, 170), 3, Color3.fromRGB(90, 20, 25))
+local debugButton = createButton(settingsContainer, "Ritual Purge & Reinitialize", Color3.fromRGB(220, 100, 100), 4)
+local resetCharButton = createButton(settingsContainer, "Sacrifice Vessel", Color3.fromRGB(240, 50, 50), 5)
 
 do
     local resetClickCount = 0
@@ -507,7 +696,7 @@ end
 
 local settingsSpacer = Instance.new("Frame")
 settingsSpacer.Name = "SettingsSpacer"
-settingsSpacer.Size = UDim2.new(1, 0, 0, 340)
+settingsSpacer.Size = UDim2.new(1, 0, 0, 220)
 settingsSpacer.BackgroundTransparency = 1
 settingsSpacer.BorderSizePixel = 0
 settingsSpacer.LayoutOrder = 9
@@ -523,6 +712,10 @@ local function terminateScript()
         pcall(stopFlingController)
     else
         State.FlingActive = false
+    end
+
+    if stopCodexUtilities then
+        pcall(stopCodexUtilities)
     end
 
     State.hoverEnabled = false
@@ -570,11 +763,17 @@ local function terminateScript()
         LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
         LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
         LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+        LocalPlayer.DevCameraOcclusionMode = originalCameraSettings.DevCameraOcclusionMode
         local cam = getActiveCamera()
         if cam then
             cam.CameraType = Enum.CameraType.Custom
             cam.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+            cam.FieldOfView = originalCameraSettings.FieldOfView
         end
+    end)
+
+    pcall(function()
+        RunService:Set3dRenderingEnabled(true)
     end)
 
     pcall(function()
@@ -995,6 +1194,110 @@ local seatedSwimButton = createButton(playerContainer, "Submerged Seated Glide: 
 local spinButton = createButton(playerContainer, "Vortex Spin: OFF", Color3.fromRGB(230, 140, 140), 11)
 local spinSpeedBox = createNumberInputRow(playerContainer, "Vortex Velocity:", 0, Color3.fromRGB(230, 140, 140), 12)
 
+-- Codex Tab (Remaining Universal Utilities: Toggles, Text Inputs, Sliders, and Goto Humanoid Lists)
+local clickTpBtn = createButton(codexContainer, "Click Teleport (Ctrl+Click): OFF", Color3.fromRGB(220, 140, 140), 1)
+
+local walkSpeedBox, walkSpeedApplyBtn = createTextActionRow(codexContainer, "WalkSpeed:", "e.g. 32", "Apply", Color3.fromRGB(240, 140, 140), 2)
+local jumpPowerBox, jumpPowerApplyBtn = createTextActionRow(codexContainer, "JumpPower:", "e.g. 100", "Apply", Color3.fromRGB(240, 140, 140), 3)
+
+local gotoPanel = Instance.new("Frame")
+gotoPanel.Name = "GotoHumanoidPanel"
+gotoPanel.Size = UDim2.new(1, 0, 0, 232)
+gotoPanel.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
+gotoPanel.BackgroundTransparency = 0.3
+gotoPanel.BorderSizePixel = 0
+gotoPanel.LayoutOrder = 4
+gotoPanel.Parent = codexContainer
+addCorner(gotoPanel, 4)
+
+local gotoHeader = Instance.new("TextLabel")
+gotoHeader.Size = UDim2.new(1, -16, 0, 22)
+gotoHeader.Position = UDim2.new(0, 8, 0, 4)
+gotoHeader.BackgroundTransparency = 1
+gotoHeader.Font = Enum.Font.GothamBold
+gotoHeader.Text = "Goto Humanoid"
+gotoHeader.TextColor3 = Color3.fromRGB(220, 140, 140)
+gotoHeader.TextSize = 12
+gotoHeader.TextXAlignment = Enum.TextXAlignment.Left
+gotoHeader.Parent = gotoPanel
+
+local gotoSearchBg = Instance.new("Frame")
+gotoSearchBg.Size = UDim2.new(1, -16, 0, 28)
+gotoSearchBg.Position = UDim2.new(0, 8, 0, 28)
+gotoSearchBg.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
+gotoSearchBg.BackgroundTransparency = 0.2
+gotoSearchBg.BorderSizePixel = 0
+gotoSearchBg.Parent = gotoPanel
+addCorner(gotoSearchBg, 4)
+
+local gotoSearchBox = Instance.new("TextBox")
+gotoSearchBox.Size = UDim2.new(1, -12, 1, 0)
+gotoSearchBox.Position = UDim2.new(0, 6, 0, 0)
+gotoSearchBox.BackgroundTransparency = 1
+gotoSearchBox.Font = Enum.Font.GothamSemibold
+gotoSearchBox.PlaceholderText = "Filter Vessels or Abominations..."
+gotoSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 100, 100)
+gotoSearchBox.Text = ""
+gotoSearchBox.TextColor3 = Color3.fromRGB(240, 210, 210)
+gotoSearchBox.TextSize = 12
+gotoSearchBox.TextXAlignment = Enum.TextXAlignment.Left
+gotoSearchBox.ClearTextOnFocus = false
+gotoSearchBox.Parent = gotoSearchBg
+
+local gotoListsRow = Instance.new("Frame")
+gotoListsRow.Size = UDim2.new(1, -16, 1, -64)
+gotoListsRow.Position = UDim2.new(0, 8, 0, 60)
+gotoListsRow.BackgroundTransparency = 1
+gotoListsRow.Parent = gotoPanel
+
+local gotoRowLayout = Instance.new("UIListLayout")
+gotoRowLayout.FillDirection = Enum.FillDirection.Horizontal
+gotoRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
+gotoRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
+gotoRowLayout.Padding = UDim.new(0, 8)
+gotoRowLayout.Parent = gotoListsRow
+
+local function buildGotoColumn(order, titleText, titleColor, strokeColor)
+    local col = Instance.new("Frame")
+    col.Size = UDim2.new(0.49, 0, 1, 0)
+    col.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
+    col.BackgroundTransparency = 0.35
+    col.BorderSizePixel = 0
+    col.LayoutOrder = order
+    col.Parent = gotoListsRow
+    addCorner(col, 4)
+
+    local lbl = Instance.new("TextLabel")
+    lbl.Size = UDim2.new(1, -8, 0, 20)
+    lbl.Position = UDim2.new(0, 4, 0, 2)
+    lbl.BackgroundTransparency = 1
+    lbl.Font = Enum.Font.GothamBold
+    lbl.Text = titleText
+    lbl.TextColor3 = titleColor
+    lbl.TextSize = 11
+    if strokeColor then
+        lbl.TextStrokeTransparency = 0.3
+        lbl.TextStrokeColor3 = strokeColor
+    end
+    lbl.Parent = col
+
+    local scroll = Instance.new("ScrollingFrame")
+    scroll.Size = UDim2.new(1, -6, 1, -24)
+    scroll.Position = UDim2.new(0, 3, 0, 22)
+    scroll.BackgroundTransparency = 1
+    scroll.BorderSizePixel = 0
+    scroll.ScrollBarThickness = 3
+    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+    scroll.Parent = col
+
+    return scroll
+end
+
+local gotoVesselsScroll = buildGotoColumn(1, "Vessels", Colors.VesselOutline, nil)
+local gotoAbomsScroll = buildGotoColumn(2, "Abominations", Colors.AbomText, Colors.AbomStroke)
+
+local placeTpBox, placeTpBtn = createTextActionRow(codexContainer, "Place ID:", "Numeric PlaceId", "Join", Color3.fromRGB(240, 140, 140), 5)
+
 local joystickFrame = Instance.new("Frame")
 joystickFrame.Name = "CustomJoystickBase"
 joystickFrame.Size = UDim2.new(0, 130, 0, 130)
@@ -1023,6 +1326,7 @@ local function switchTab(activeTab, activeBtn)
     espContainer.Visible = false
     combatContainer.Visible = false
     playerContainer.Visible = false
+    codexContainer.Visible = false
     settingsContainer.Visible = false
 
     espTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
@@ -1031,18 +1335,416 @@ local function switchTab(activeTab, activeBtn)
     combatTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     playerTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
+    codexTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
+    codexTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
 
     activeTab.Visible = true
     if activeBtn then
         activeBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
         activeBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
     end
+    if activeTab == codexContainer and RefreshGotoLists then
+        RefreshGotoLists()
+    end
 end
 
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
 combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, combatTabBtn) end)
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
+codexTabBtn.MouseButton1Click:Connect(function() switchTab(codexContainer, codexTabBtn) end)
 gearButton.MouseButton1Click:Connect(function() switchTab(settingsContainer, nil) end)
+
+-- Codex Sliders (FOV, Master Volume, FPS Cap)
+createSliderRow(codexContainer, "Field of View (FOV)", 40, 120, State.fovValue, "", Color3.fromRGB(240, 140, 140), 6, function(val)
+    State.fovValue = val
+    local cam = getActiveCamera()
+    if cam then
+        pcall(function() cam.FieldOfView = val end)
+    end
+end)
+
+createSliderRow(codexContainer, "Master Volume", 0, 10, State.volumeValue, "/10", Color3.fromRGB(240, 140, 140), 7, function(val)
+    State.volumeValue = val
+    pcall(function()
+        local gs = UserSettings():GetService("UserGameSettings")
+        if gs then
+            gs.MasterVolume = val / 10
+        end
+    end)
+end)
+
+createSliderRow(codexContainer, "FPS Cap (0 = Default)", 0, 240, State.fpsCapValue, " FPS", Color3.fromRGB(240, 140, 140), 8, function(val)
+    State.fpsCapValue = val
+    if type(setfpscap) == "function" then
+        pcall(function()
+            setfpscap(val > 0 and val or 9999)
+        end)
+    end
+end)
+
+-- Settings & Codex Utility Functions
+local function startAntiAfk()
+    if Connections.antiAfk then Connections.antiAfk:Disconnect() end
+    Connections.antiAfk = trackConnection(LocalPlayer.Idled:Connect(function()
+        if State.isTerminated or not State.antiAfkEnabled then return end
+        pcall(function()
+            VirtualUser:CaptureController()
+            VirtualUser:ClickButton2(Vector2.new())
+        end)
+    end))
+end
+
+local function stopAntiAfk()
+    if Connections.antiAfk then Connections.antiAfk:Disconnect() Connections.antiAfk = nil end
+end
+
+local function startAutoRejoin()
+    if Connections.autoRejoin then Connections.autoRejoin:Disconnect() end
+    Connections.autoRejoin = trackConnection(GuiService.ErrorMessageChanged:Connect(function(msg)
+        if State.isTerminated or not State.autoRejoinEnabled then return end
+        if msg and msg ~= "" then
+            task.delay(1, function()
+                if State.isTerminated or not State.autoRejoinEnabled then return end
+                pcall(function()
+                    if #Players:GetPlayers() <= 1 then
+                        TeleportService:Teleport(game.PlaceId, LocalPlayer)
+                    else
+                        TeleportService:TeleportToPlaceInstance(game.PlaceId, game.JobId, LocalPlayer)
+                    end
+                end)
+            end)
+        end
+    end))
+end
+
+local function stopAutoRejoin()
+    if Connections.autoRejoin then Connections.autoRejoin:Disconnect() Connections.autoRejoin = nil end
+end
+
+local function applyCamNoclip(enabled)
+    pcall(function()
+        LocalPlayer.DevCameraOcclusionMode = enabled
+            and Enum.DevCameraOcclusionMode.Invisicam
+            or originalCameraSettings.DevCameraOcclusionMode
+    end)
+end
+
+local function startClickTp()
+    if Connections.clickTp then Connections.clickTp:Disconnect() end
+    Connections.clickTp = trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+        if State.isTerminated or not State.clickTpEnabled or gameProcessed then return end
+        if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
+            local cam = getActiveCamera()
+            local char = LocalPlayer.Character
+            local root = getCharacterRoot(char)
+            if cam and root then
+                local mousePos = UserInputService:GetMouseLocation()
+                local unitRay = cam:ViewportPointToRay(mousePos.X, mousePos.Y)
+                local rp = RaycastParams.new()
+                rp.FilterType = Enum.RaycastFilterType.Exclude
+                rp.FilterDescendantsInstances = {char}
+                local res = Workspace:Raycast(unitRay.Origin, unitRay.Direction * 2500, rp)
+                local targetPos = res and (res.Position + Vector3.new(0, 3, 0)) or (unitRay.Origin + unitRay.Direction * 120)
+                pcall(function()
+                    root.CFrame = CFrame.new(targetPos)
+                    root.AssemblyLinearVelocity = Vector3.zero
+                end)
+            end
+        end
+    end))
+end
+
+local function stopClickTp()
+    if Connections.clickTp then Connections.clickTp:Disconnect() Connections.clickTp = nil end
+end
+
+local function isAdInstance(obj)
+    local lowerName = obj.Name:lower()
+    return string.find(lowerName, "ad", 1, true) ~= nil
+        and (string.find(lowerName, "billboard", 1, true) ~= nil
+            or string.find(lowerName, "poster", 1, true) ~= nil
+            or string.find(lowerName, "banner", 1, true) ~= nil
+            or obj:IsA("BillboardGui")
+            or obj:IsA("SurfaceGui")
+            or obj:IsA("Decal")
+            or obj:IsA("Texture"))
+end
+
+local function purgeAdsOnce()
+    pcall(function()
+        for _, obj in ipairs(Workspace:GetDescendants()) do
+            if isAdInstance(obj) then
+                obj:Destroy()
+            end
+        end
+    end)
+end
+
+local function startAdPurge()
+    purgeAdsOnce()
+    if Connections.adPurge then Connections.adPurge:Disconnect() end
+    Connections.adPurge = trackConnection(Workspace.DescendantAdded:Connect(function(obj)
+        if State.isTerminated or not State.removeAdsEnabled then return end
+        if isAdInstance(obj) then
+            pcall(function() obj:Destroy() end)
+        end
+    end))
+end
+
+local function stopAdPurge()
+    if Connections.adPurge then Connections.adPurge:Disconnect() Connections.adPurge = nil end
+end
+
+trackConnection(RunService.Heartbeat:Connect(function()
+    if State.isTerminated then return end
+    local char = LocalPlayer.Character
+    local hum = char and char:FindFirstChildOfClass("Humanoid")
+    if hum then
+        if State.customWalkSpeedEnabled then
+            pcall(function() hum.WalkSpeed = State.customWalkSpeedValue end)
+        end
+        if State.customJumpEnabled then
+            pcall(function()
+                if hum.UseJumpPower then
+                    hum.JumpPower = State.customJumpValue
+                else
+                    hum.JumpHeight = State.customJumpValue
+                end
+            end)
+        end
+    end
+    local cam = getActiveCamera()
+    if cam and cam.FieldOfView ~= State.fovValue then
+        pcall(function() cam.FieldOfView = State.fovValue end)
+    end
+end))
+
+stopCodexUtilities = function()
+    stopAntiAfk()
+    stopAutoRejoin()
+    stopClickTp()
+    stopAdPurge()
+    applyCamNoclip(false)
+    pcall(function() RunService:Set3dRenderingEnabled(true) end)
+end
+
+antiAfkBtn.MouseButton1Click:Connect(function()
+    State.antiAfkEnabled = not State.antiAfkEnabled
+    antiAfkBtn.Text = State.antiAfkEnabled and "Anti-AFK (Idle Guard): ON" or "Anti-AFK (Idle Guard): OFF"
+    antiAfkBtn.BackgroundColor3 = State.antiAfkEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
+    if State.antiAfkEnabled then startAntiAfk() else stopAntiAfk() end
+end)
+
+autoRejoinBtn.MouseButton1Click:Connect(function()
+    State.autoRejoinEnabled = not State.autoRejoinEnabled
+    autoRejoinBtn.Text = State.autoRejoinEnabled and "Auto-Rejoin on Kick: ON" or "Auto-Rejoin on Kick: OFF"
+    autoRejoinBtn.TextColor3 = State.autoRejoinEnabled and Color3.fromRGB(255, 170, 170) or Color3.fromRGB(230, 130, 130)
+    autoRejoinBtn.BackgroundColor3 = State.autoRejoinEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
+    if State.autoRejoinEnabled then startAutoRejoin() else stopAutoRejoin() end
+end)
+
+removeAdsBtn.MouseButton1Click:Connect(function()
+    State.removeAdsEnabled = not State.removeAdsEnabled
+    removeAdsBtn.Text = State.removeAdsEnabled and "Purge Ad Billboards: ON" or "Purge Ad Billboards: OFF"
+    removeAdsBtn.TextColor3 = State.removeAdsEnabled and Color3.fromRGB(255, 170, 170) or Color3.fromRGB(220, 140, 140)
+    removeAdsBtn.BackgroundColor3 = State.removeAdsEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
+    if State.removeAdsEnabled then startAdPurge() else stopAdPurge() end
+end)
+
+if State.autoRejoinEnabled then
+    startAutoRejoin()
+end
+
+if State.removeAdsEnabled then
+    startAdPurge()
+end
+
+clickTpBtn.MouseButton1Click:Connect(function()
+    State.clickTpEnabled = not State.clickTpEnabled
+    clickTpBtn.Text = State.clickTpEnabled and "Click Teleport (Ctrl+Click): ON" or "Click Teleport (Ctrl+Click): OFF"
+    clickTpBtn.BackgroundColor3 = State.clickTpEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
+    if State.clickTpEnabled then startClickTp() else stopClickTp() end
+end)
+
+walkSpeedApplyBtn.MouseButton1Click:Connect(function()
+    local val = tonumber(walkSpeedBox.Text)
+    if val then
+        State.customWalkSpeedValue = val
+        State.customWalkSpeedEnabled = true
+        walkSpeedApplyBtn.Text = "Active"
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then pcall(function() hum.WalkSpeed = val end) end
+        notify("Codex", "WalkSpeed locked to " .. tostring(val), 2)
+    else
+        State.customWalkSpeedEnabled = false
+        walkSpeedApplyBtn.Text = "Apply"
+        notify("Codex", "Invalid WalkSpeed; override off.", 2)
+    end
+end)
+
+jumpPowerApplyBtn.MouseButton1Click:Connect(function()
+    local val = tonumber(jumpPowerBox.Text)
+    if val then
+        State.customJumpValue = val
+        State.customJumpEnabled = true
+        jumpPowerApplyBtn.Text = "Active"
+        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            pcall(function()
+                if hum.UseJumpPower then
+                    hum.JumpPower = val
+                else
+                    hum.JumpHeight = val
+                end
+            end)
+        end
+        notify("Codex", "Jump power/height locked to " .. tostring(val), 2)
+    else
+        State.customJumpEnabled = false
+        jumpPowerApplyBtn.Text = "Apply"
+        notify("Codex", "Invalid jump value; override off.", 2)
+    end
+end)
+
+local function warpToHumanoidModel(model)
+    local targetRoot = model and model.Parent and getCharacterRoot(model)
+    local myRoot = getCharacterRoot(LocalPlayer.Character)
+    if targetRoot and myRoot then
+        pcall(function()
+            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 3, 2)
+            myRoot.AssemblyLinearVelocity = Vector3.zero
+        end)
+        notify("Codex", "Warped to " .. model.Name, 2)
+    else
+        notify("Codex", "Target humanoid unavailable.", 2)
+    end
+end
+
+local function populateGotoColumn(scrollFrame, entries, filterText, isPlayer)
+    for _, child in ipairs(scrollFrame:GetChildren()) do
+        child:Destroy()
+    end
+
+    local yPos = 4
+    for _, item in ipairs(entries) do
+        local searchHaystack = (item.Name .. " " .. (item.DisplayName or "")):lower()
+        if filterText == "" or string.find(searchHaystack, filterText, 1, true) then
+            local btn = Instance.new("TextButton")
+            btn.Size = UDim2.new(1, -4, 0, 24)
+            btn.Position = UDim2.new(0, 2, 0, yPos)
+            btn.BackgroundColor3 = Color3.fromRGB(24, 16, 20)
+            btn.BorderSizePixel = 0
+            btn.Font = Enum.Font.GothamSemibold
+            btn.TextSize = 11
+            btn.TextXAlignment = Enum.TextXAlignment.Left
+            btn.TextColor3 = isPlayer and Colors.VesselOutline or Colors.AbomText
+            if not isPlayer then
+                btn.TextStrokeTransparency = 0.3
+                btn.TextStrokeColor3 = Colors.AbomStroke
+            end
+            local distTag = (item.Distance and item.Distance ~= math.huge) and string.format(" [%dm]", math.floor(item.Distance)) or ""
+            btn.Text = "  " .. item.Name .. distTag
+            btn.Parent = scrollFrame
+            addCorner(btn, 3)
+
+            local targetModel = item.Model
+            btn.MouseButton1Click:Connect(function()
+                warpToHumanoidModel(targetModel)
+            end)
+
+            yPos = yPos + 26
+        end
+    end
+
+    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPos + 4)
+end
+
+RefreshGotoLists = function()
+    if State.isTerminated then return end
+    local vessels = {}
+    local abominations = {}
+    local seenModels = {}
+
+    local myChar = LocalPlayer.Character
+    local myRoot = getCharacterRoot(myChar)
+    local cam = getActiveCamera()
+    local originPos = myRoot and myRoot.Position or (cam and cam.CFrame.Position or Vector3.new())
+
+    for _, plr in ipairs(Players:GetPlayers()) do
+        if plr ~= LocalPlayer and plr.Character then
+            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
+            local root = getCharacterRoot(plr.Character)
+            if hum and hum.Health > 0 and not seenModels[plr.Character] then
+                seenModels[plr.Character] = true
+                local dist = root and (originPos - root.Position).Magnitude or math.huge
+                table.insert(vessels, {
+                    Name = plr.Name,
+                    DisplayName = plr.DisplayName,
+                    Model = plr.Character,
+                    Distance = dist
+                })
+            end
+        end
+    end
+
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("Humanoid") then
+            local model = obj.Parent
+            if model and model:IsA("Model") and model ~= myChar and not seenModels[model] and obj.Health > 0 then
+                seenModels[model] = true
+                local root = getCharacterRoot(model)
+                local dist = root and (originPos - root.Position).Magnitude or math.huge
+                if Players:GetPlayerFromCharacter(model) then
+                    table.insert(vessels, {
+                        Name = model.Name,
+                        DisplayName = model.Name,
+                        Model = model,
+                        Distance = dist
+                    })
+                else
+                    table.insert(abominations, {
+                        Name = model.Name,
+                        DisplayName = model.Name,
+                        Model = model,
+                        Distance = dist
+                    })
+                end
+            end
+        end
+    end
+
+    table.sort(vessels, function(a, b) return a.Name:lower() < b.Name:lower() end)
+    table.sort(abominations, function(a, b) return a.Name:lower() < b.Name:lower() end)
+
+    local filterText = gotoSearchBox.Text:lower():gsub("^%s+", ""):gsub("%s+$", "")
+    populateGotoColumn(gotoVesselsScroll, vessels, filterText, true)
+    populateGotoColumn(gotoAbomsScroll, abominations, filterText, false)
+end
+
+gotoSearchBox:GetPropertyChangedSignal("Text"):Connect(RefreshGotoLists)
+
+task.spawn(function()
+    while screenGui.Parent and not State.isTerminated do
+        if codexContainer.Visible then
+            RefreshGotoLists()
+        end
+        task.wait(3)
+    end
+end)
+
+RefreshGotoLists()
+
+placeTpBtn.MouseButton1Click:Connect(function()
+    local placeId = tonumber(placeTpBox.Text)
+    if placeId and placeId > 0 then
+        notify("Codex", "Teleporting to Place " .. tostring(placeId) .. "...", 2)
+        pcall(function()
+            TeleportService:Teleport(placeId, LocalPlayer)
+        end)
+    else
+        notify("Codex", "Enter a valid numeric Place ID.", 2)
+    end
+end)
 
 -- Accurate weight calculation using part:GetMass()
 local function getModelMassKg(model)
@@ -1370,7 +2072,7 @@ local function GetCategorizedTargets()
                     local rootPart = getCharacterRoot(charModel)
                     local dist = rootPart and (localPos - rootPart.Position).Magnitude or math.huge
 
-                    local targetData = { Name = charModel.Name .. " (" .. charModel.ClassName .. ")", Model = charModel, Humanoid = obj, Distance = dist }
+                    local targetData = { Name = charModel.Name, Model = charModel, Humanoid = obj, Distance = dist }
                     if Players:GetPlayerFromCharacter(charModel) then
                         table.insert(playerTargets, targetData)
                     else
@@ -1588,6 +2290,7 @@ local function computePredictedTargetPos(rootPart, targetPart, targetHum, lastVe
         return actualPos, targetVel
     end
 
+    local safeDt = math.clamp(dt or (1 / 60), 1 / 240, 0.1)
     local dist = (rootPart.Position - actualPos).Magnitude
     local okPing, rawPing = pcall(function() return LocalPlayer:GetNetworkPing() end)
     local pingOffset = okPing and math.clamp(rawPing or 0.05, 0, 0.22) or 0.05
@@ -1596,7 +2299,7 @@ local function computePredictedTargetPos(rootPart, targetPart, targetHum, lastVe
     local speedFactor = math.clamp(targetVel.Magnitude / 24, 0.35, 1.4)
     local leadTime = math.clamp((distFactor * 0.32 * speedFactor) + (pingOffset * 0.85), 0, FlingConfig.MaxLeadSeconds)
 
-    local accel = (targetVel - lastVel) / math.max(dt, 1 / 240)
+    local accel = (targetVel - lastVel) / safeDt
     if accel.Magnitude > 0.1 and targetVel.Unit:Dot(accel.Unit) < -0.2 then
         leadTime = leadTime * 0.5
     end
@@ -1629,6 +2332,20 @@ local function computeLaunchVelocity(modeName, massScale)
     )
 end
 
+local function cleanupFlingStepState(animSuppressConn, humanoid)
+    if animSuppressConn then
+        pcall(function() animSuppressConn:Disconnect() end)
+    end
+    clearFlingMovers()
+    if humanoid and humanoid.Parent and not State.seatedFlingEnabled then
+        pcall(function()
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+            humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end)
+    end
+end
+
 local function peakFlingModel(targetData, runToken)
     if State.isTerminated or not State.FlingActive or State.flingRunToken ~= runToken then return end
 
@@ -1638,6 +2355,7 @@ local function peakFlingModel(targetData, runToken)
     local TCharacter = targetData and targetData.Model
     local cam = getActiveCamera()
 
+    if not Character or not Character.Parent or not Humanoid or not RootPart then return end
     if not TCharacter or not TCharacter.Parent then return end
 
     local THumanoid = targetData.Humanoid
@@ -1656,115 +2374,111 @@ local function peakFlingModel(targetData, runToken)
         end)
     end
 
-    if Character and Humanoid and RootPart then
-        if not env.OldPos or RootPart.AssemblyLinearVelocity.Magnitude < 50 then
-            env.OldPos = RootPart.CFrame
-        end
+    clearFlingMovers()
 
-        clearFlingMovers()
+    local bv = Instance.new("BodyVelocity")
+    bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
+    bv.Velocity = Vector3.zero
+    bv.Parent = RootPart
+    Physics.flingBodyVel = bv
 
-        local bv = Instance.new("BodyVelocity")
-        bv.MaxForce = Vector3.new(1e7, 1e7, 1e7)
-        bv.Velocity = Vector3.zero
-        bv.Parent = RootPart
-        Physics.flingBodyVel = bv
+    local bav = Instance.new("BodyAngularVelocity")
+    bav.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
+    bav.AngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
+    bav.Parent = RootPart
+    Physics.flingBodyAngVel = bav
 
-        local bav = Instance.new("BodyAngularVelocity")
-        bav.MaxTorque = Vector3.new(1e7, 1e7, 1e7)
-        bav.AngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
-        bav.Parent = RootPart
-        Physics.flingBodyAngVel = bav
+    local animSuppressConn
+    if State.seatedFlingEnabled then
+        pcall(function()
+            Humanoid.Sit = true
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+        end)
+    else
+        pcall(function()
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+            Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+        end)
+        suppressSwimAnimations(Humanoid)
 
-        local animSuppressConn
-        if State.seatedFlingEnabled then
-            pcall(function()
-                Humanoid.Sit = true
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-            end)
-        else
-            pcall(function()
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
-                Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
-            end)
-            suppressSwimAnimations(Humanoid)
-
-            local animator = Humanoid:FindFirstChildOfClass("Animator")
-            if animator then
-                animSuppressConn = animator.AnimationPlayed:Connect(function(track)
-                    local animName = (track.Animation and track.Animation.Name:lower()) or track.Name:lower()
-                    if string.find(animName, "swim", 1, true) then
-                        pcall(function() track:Stop(0) end)
-                    end
-                end)
-            end
-        end
-
-        pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
-
-        local massScale = math.clamp(math.pow(GetModelMass(TCharacter), 1.15), 1, 25)
-        local lastVel = targetPart.AssemblyLinearVelocity
-        local lastSample = tick()
-        local startedAt = lastSample
-
-        while State.FlingActive and not State.isTerminated and State.flingRunToken == runToken do
-            if not TCharacter.Parent or isTargetAnchored(TCharacter, THumanoid) then
-                break
-            end
-            if (tick() - startedAt) >= FlingConfig.MaxLungeSeconds then
-                break
-            end
-
-            local now = tick()
-            local dt = now - lastSample
-            lastSample = now
-
-            local predictedPos, currentVel = computePredictedTargetPos(RootPart, targetPart, THumanoid, lastVel, dt)
-            lastVel = currentVel
-
-            if currentVel.Magnitude >= FlingConfig.EarlyExitSpeed then
-                break
-            end
-
-            State.orbitAngleCounter = State.orbitAngleCounter + FlingConfig.OrbitStep
-            local microOffset = Vector3.new(
-                math.cos(State.orbitAngleCounter) * FlingConfig.OrbitRadius,
-                0,
-                math.sin(State.orbitAngleCounter) * FlingConfig.OrbitRadius
-            )
-
-            local contactPos = predictedPos + microOffset
-            local contactCFrame = CFrame.lookAt(contactPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
-            local launchVel = computeLaunchVelocity(FlingDirections[State.currentDirIndex], massScale)
-
-            pcall(function()
-                if State.seatedFlingEnabled then
-                    Humanoid.Sit = true
-                elseif Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
-                    Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+        local animator = Humanoid:FindFirstChildOfClass("Animator")
+        if animator then
+            animSuppressConn = animator.AnimationPlayed:Connect(function(track)
+                local animName = (track.Animation and track.Animation.Name:lower()) or track.Name:lower()
+                if string.find(animName, "swim", 1, true) then
+                    pcall(function() track:Stop(0) end)
                 end
-                RootPart.CFrame = contactCFrame
-                RootPart.AssemblyLinearVelocity = launchVel
-                RootPart.AssemblyAngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
-                bv.Velocity = launchVel
-            end)
-
-            RunService.Heartbeat:Wait()
-        end
-
-        if animSuppressConn then
-            pcall(function() animSuppressConn:Disconnect() end)
-        end
-        clearFlingMovers()
-
-        if not State.seatedFlingEnabled then
-            pcall(function()
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
-                Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
             end)
         end
     end
+
+    pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
+
+    local massScale = math.clamp(math.pow(GetModelMass(TCharacter), 1.15), 1, 25)
+    local lastVel = targetPart.AssemblyLinearVelocity
+    local lastSample = tick()
+    local startedAt = lastSample
+
+    while State.FlingActive and not State.isTerminated and State.flingRunToken == runToken do
+        if not Character.Parent or LocalPlayer.Character ~= Character then
+            cleanupFlingStepState(animSuppressConn, Humanoid)
+            return
+        end
+        if not RootPart.Parent then
+            RootPart = (Humanoid and Humanoid.RootPart) or getCharacterRoot(Character)
+            if not RootPart then
+                cleanupFlingStepState(animSuppressConn, Humanoid)
+                return
+            end
+        end
+        if not TCharacter.Parent or isTargetAnchored(TCharacter, THumanoid) then
+            break
+        end
+        if (tick() - startedAt) >= FlingConfig.MaxLungeSeconds then
+            break
+        end
+
+        local now = tick()
+        local dt = now - lastSample
+        lastSample = now
+
+        local predictedPos, currentVel = computePredictedTargetPos(RootPart, targetPart, THumanoid, lastVel, dt)
+        lastVel = currentVel
+
+        if currentVel.Magnitude >= FlingConfig.EarlyExitSpeed then
+            break
+        end
+
+        State.orbitAngleCounter = State.orbitAngleCounter + FlingConfig.OrbitStep
+        local microOffset = Vector3.new(
+            math.cos(State.orbitAngleCounter) * FlingConfig.OrbitRadius,
+            0,
+            math.sin(State.orbitAngleCounter) * FlingConfig.OrbitRadius
+        )
+
+        local contactPos = predictedPos + microOffset
+        local contactCFrame = CFrame.lookAt(contactPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
+        local launchVel = computeLaunchVelocity(FlingDirections[State.currentDirIndex], massScale)
+
+        pcall(function()
+            if State.seatedFlingEnabled then
+                Humanoid.Sit = true
+            elseif Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+                Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+            end
+            RootPart.CFrame = contactCFrame
+            RootPart.AssemblyLinearVelocity = launchVel
+            RootPart.AssemblyAngularVelocity = Vector3.new(0, FlingConfig.AngularVelocityMagnitude, 0)
+            if bv.Parent == RootPart then
+                bv.Velocity = launchVel
+            end
+        end)
+
+        RunService.Heartbeat:Wait()
+    end
+
+    cleanupFlingStepState(animSuppressConn, Humanoid)
 end
 
 local function ReturnToOriginalPosition()
@@ -1773,16 +2487,17 @@ local function ReturnToOriginalPosition()
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
     local rootPart = (humanoid and humanoid.RootPart) or getCharacterRoot(character)
 
-    if character and rootPart and env.OldPos then
+    if character and character.Parent and rootPart and env.OldPos then
         local startTime = tick()
         repeat
+            if not character.Parent or LocalPlayer.Character ~= character then break end
             pcall(function()
                 if State.seatedFlingEnabled and humanoid then
                     humanoid.Sit = true
                 elseif humanoid then
                     humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
                     humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
-                    humanoid:ChangeState("GettingUp")
+                    humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
                 end
                 rootPart.CFrame = env.OldPos * CFrame.new(0, 0.5, 0)
                 rootPart.AssemblyLinearVelocity = Vector3.zero
@@ -1801,11 +2516,29 @@ local function ReturnToOriginalPosition()
     pcall(function() Workspace.FallenPartsDestroyHeight = env.FPDH end)
 
     local cam = getActiveCamera()
-    if cam and humanoid then
+    if cam and humanoid and humanoid.Parent then
         pcall(function()
             cam.CameraType = Enum.CameraType.Custom
             cam.CameraSubject = humanoid
         end)
+    end
+end
+
+local function finishFlingLoopNaturally(runToken)
+    if State.flingRunToken ~= runToken then return end
+    State.FlingActive = false
+    clearFlingMovers()
+    pcall(function() Workspace.FallenPartsDestroyHeight = env.FPDH end)
+    local cam = getActiveCamera()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if cam and hum then
+        pcall(function()
+            cam.CameraType = Enum.CameraType.Custom
+            cam.CameraSubject = hum
+        end)
+    end
+    if UpdateFlingStatus then
+        pcall(UpdateFlingStatus)
     end
 end
 
@@ -1855,13 +2588,13 @@ startFlingBtn.MouseButton1Click:Connect(function()
                 local currentNearest = GetNearestSingleTarget()
                 if currentNearest and currentNearest.Model and currentNearest.Model.Parent then
                     peakFlingModel(currentNearest, activeToken)
+                else
+                    break
                 end
                 UpdateFlingStatus()
                 task.wait(0.05)
             end
-            if State.flingRunToken == activeToken then
-                stopFlingController()
-            end
+            finishFlingLoopNaturally(activeToken)
         end)
     else
         local count = 0
@@ -1897,9 +2630,7 @@ startFlingBtn.MouseButton1Click:Connect(function()
                 UpdateFlingStatus()
                 task.wait(0.1)
             end
-            if State.flingRunToken == activeToken then
-                stopFlingController()
-            end
+            finishFlingLoopNaturally(activeToken)
         end)
     end
 end)
@@ -2284,6 +3015,7 @@ startCameraZoom = function()
         LocalPlayer.CameraMaxZoomDistance = 999999
         LocalPlayer.CameraMinZoomDistance = 0.5
         LocalPlayer.CameraMode = Enum.CameraMode.Classic
+        LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
     end)
     Connections.cameraZoom = trackConnection(RunService.Heartbeat:Connect(function()
         if State.isTerminated then return end
@@ -2291,6 +3023,9 @@ startCameraZoom = function()
             pcall(function()
                 if LocalPlayer.CameraMaxZoomDistance ~= 999999 then
                     LocalPlayer.CameraMaxZoomDistance = 999999
+                end
+                if LocalPlayer.DevCameraOcclusionMode ~= Enum.DevCameraOcclusionMode.Invisicam then
+                    LocalPlayer.DevCameraOcclusionMode = Enum.DevCameraOcclusionMode.Invisicam
                 end
             end)
         end
@@ -2303,6 +3038,7 @@ stopCameraZoom = function()
         LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
         LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
         LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+        LocalPlayer.DevCameraOcclusionMode = originalCameraSettings.DevCameraOcclusionMode
     end)
 end
 
