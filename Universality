@@ -1,14 +1,5 @@
 -- Target Engine: Roblox Luau
--- Updated: Removed "chant:" prefix from multi-step clicks and aligned the Purge & Terminate button precisely to the bottom scroll limit.
-
-local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
-if queueOnTeleport then
-    pcall(function()
-        queueOnTeleport([[
-            loadstring(game:HttpGet("https://raw.githubusercontent.com/juankaledunkle-oss/aLoren-Ipsi/refs/heads/main/Universality"))()
-        ]])
-    end)
-end
+-- Updated: Scoped auto-load to only execute when rejoining / server-hopping / redirecting within the same PlaceId.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -17,15 +8,81 @@ local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 local CoreGui = game:GetService("CoreGui")
 local StarterGui = game:GetService("StarterGui")
-local Camera = Workspace.CurrentCamera
+
+local queueOnTeleport = (syn and syn.queue_on_teleport) or queue_on_teleport or (fluxus and fluxus.queue_on_teleport)
+if queueOnTeleport then
+    pcall(function()
+        local currentPlaceId = game.PlaceId
+        local currentJobId = game.JobId
+        local queuedAt = os.time()
+
+        local payload = string.format([[
+            local expectedPlaceId = %d
+            local expectedJobId = %q
+            local queuedAt = %d
+            local maxAgeSeconds = 120
+
+            if game.PlaceId == expectedPlaceId and (os.time() - queuedAt) <= maxAgeSeconds then
+                loadstring(game:HttpGet("https://raw.githubusercontent.com/juankaledunkle-oss/aLoren-Ipsi/refs/heads/main/Universality"))()
+            end
+        ]], currentPlaceId, currentJobId, queuedAt)
+
+        queueOnTeleport(payload)
+    end)
+end
+
+local function getActiveCamera()
+    return Workspace.CurrentCamera or Workspace:FindFirstChildOfClass("Camera")
+end
+
+local Camera = getActiveCamera()
 
 local LocalPlayer = Players.LocalPlayer
-local PlayerGui = LocalPlayer:WaitForChild("PlayerGui")
+if not LocalPlayer then
+    Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
+    LocalPlayer = Players.LocalPlayer
+end
+
+local function getGuiParent()
+    local target = nil
+    pcall(function()
+        if gethui then
+            target = gethui()
+        end
+    end)
+    if target then return target end
+
+    pcall(function()
+        local _ = CoreGui:GetChildren()
+        target = CoreGui
+    end)
+    if target then return target end
+
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10)
+    return pg
+end
+
+local guiParent = getGuiParent()
+if not guiParent then
+    warn("Cult of Entropy: Unable to resolve a valid GUI container.")
+    return
+end
+
 local env = (type(getgenv) == "function" and getgenv()) or _G
 
-if PlayerGui:FindFirstChild("RayfieldStyleGui") then
-    PlayerGui.RayfieldStyleGui:Destroy()
+local function destroyExistingGui(parent)
+    if not parent then return end
+    pcall(function()
+        local existing = parent:FindFirstChild("RayfieldStyleGui")
+        if existing then existing:Destroy() end
+    end)
 end
+
+destroyExistingGui(CoreGui)
+pcall(function()
+    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+    destroyExistingGui(pg)
+end)
 
 -- Grouped State & Config Tables (Prevents Luau 200-local limit error)
 local State = {
@@ -38,7 +95,7 @@ local State = {
     noclipEnabled = false,
     infJumpEnabled = false,
     joystickEnabled = false,
-    cameraZoomEnabled = true, -- Default ON as requested
+    cameraZoomEnabled = true,
     pausedScreenEnabled = true,
     noTextureEnabled = false,
     noTextureClickStep = 0,
@@ -46,7 +103,7 @@ local State = {
     noFogEnabled = false,
     fullBrightEnabled = false,
     humEspEnabled = false,
-    espIgnoreAnchoredEnabled = true, -- Default ON as requested
+    espIgnoreAnchoredEnabled = true,
     flySpeed = 150,
     avatarSpinSpeed = 0,
     targetNearestEnabled = false,
@@ -70,7 +127,7 @@ local espCache = {}
 local statLabels = {}
 
 env.OldPos = nil
-env.FPDH = Workspace.FallenPartsDestroyHeight
+env.FPDH = (pcall(function() return Workspace.FallenPartsDestroyHeight end) and Workspace.FallenPartsDestroyHeight) or -500
 
 local FlingDirections = {"The Null", "The Skies", "The Abyss"}
 
@@ -85,19 +142,38 @@ local Colors = {
 }
 
 local originalLighting = {
-    Brightness = Lighting.Brightness,
-    ClockTime = Lighting.ClockTime,
-    FogEnd = Lighting.FogEnd,
-    FogStart = Lighting.FogStart,
-    GlobalShadows = Lighting.GlobalShadows,
-    OutdoorAmbient = Lighting.OutdoorAmbient
+    Brightness = (pcall(function() return Lighting.Brightness end) and Lighting.Brightness) or 1,
+    ClockTime = (pcall(function() return Lighting.ClockTime end) and Lighting.ClockTime) or 14,
+    FogEnd = (pcall(function() return Lighting.FogEnd end) and Lighting.FogEnd) or 100000,
+    FogStart = (pcall(function() return Lighting.FogStart end) and Lighting.FogStart) or 0,
+    GlobalShadows = (pcall(function() return Lighting.GlobalShadows end) and Lighting.GlobalShadows) or true,
+    OutdoorAmbient = (pcall(function() return Lighting.OutdoorAmbient end) and Lighting.OutdoorAmbient) or Color3.fromRGB(128, 128, 128)
 }
 
 local originalCameraSettings = {
-    CameraMode = LocalPlayer.CameraMode,
-    CameraMaxZoomDistance = LocalPlayer.CameraMaxZoomDistance,
-    CameraMinZoomDistance = LocalPlayer.CameraMinZoomDistance
+    CameraMode = (pcall(function() return LocalPlayer.CameraMode end) and LocalPlayer.CameraMode) or Enum.CameraMode.Classic,
+    CameraMaxZoomDistance = (pcall(function() return LocalPlayer.CameraMaxZoomDistance end) and LocalPlayer.CameraMaxZoomDistance) or 128,
+    CameraMinZoomDistance = (pcall(function() return LocalPlayer.CameraMinZoomDistance end) and LocalPlayer.CameraMinZoomDistance) or 0.5
 }
+
+local function notify(title, text, duration)
+    pcall(function()
+        StarterGui:SetCore("SendNotification", {
+            Title = title,
+            Text = text,
+            Duration = duration or 2
+        })
+    end)
+end
+
+local function getCharacterRoot(char)
+    if not char then return nil end
+    return char:FindFirstChild("HumanoidRootPart")
+        or char:FindFirstChild("Torso")
+        or char:FindFirstChild("UpperTorso")
+        or char.PrimaryPart
+        or char:FindFirstChildWhichIsA("BasePart")
+end
 
 -- Forward Declarations
 local RefreshTargetLists
@@ -180,17 +256,19 @@ local function createNumberInputRow(parent, labelText, defaultValue, accentColor
     return box
 end
 
--- Main ScreenGui & Window Setup (DisplayOrder set to 999999 for top layer priority)
+-- Main ScreenGui & Window Setup
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RayfieldStyleGui"
 screenGui.ResetOnSpawn = false
-screenGui.DisplayOrder = 999999
-screenGui.Parent = PlayerGui
+pcall(function() screenGui.IgnoreGuiInset = true end)
+pcall(function() screenGui.DisplayOrder = 999999 end)
+screenGui.Parent = guiParent
 
+-- Moved ~1cm (~38px) down from top edge
 local openButton = Instance.new("TextButton")
 openButton.Name = "OpenButton"
 openButton.Size = UDim2.new(0, 230, 0, 40)
-openButton.Position = UDim2.new(0.5, -115, 0, 1)
+openButton.Position = UDim2.new(0.5, -115, 0, 39)
 openButton.BackgroundColor3 = Color3.fromRGB(14, 10, 12)
 openButton.BackgroundTransparency = 0.2
 openButton.BorderSizePixel = 0
@@ -204,10 +282,11 @@ openButton.Parent = screenGui
 addCorner(openButton, 6)
 addStroke(openButton, 1.5, Color3.fromRGB(150, 15, 15), 0.3)
 
+-- Centered on screen (600x670)
 local mainWindow = Instance.new("Frame")
 mainWindow.Name = "MainWindow"
 mainWindow.Size = UDim2.new(0, 600, 0, 670)
-mainWindow.Position = UDim2.new(0.5, -300, 0, 20)
+mainWindow.Position = UDim2.new(0.5, -300, 0.5, -335)
 mainWindow.BackgroundColor3 = Color3.fromRGB(12, 10, 13)
 mainWindow.BackgroundTransparency = 0.2
 mainWindow.BorderSizePixel = 0
@@ -229,7 +308,7 @@ titleLabel.Size = UDim2.new(1, -260, 1, 0)
 titleLabel.Position = UDim2.new(0, 15, 0, 0)
 titleLabel.BackgroundTransparency = 1
 titleLabel.Font = Enum.Font.GothamBold
-titleLabel.Text = "Cult of Entropy"
+titleLabel.Text = "Cult of Entropy (Optimal Mode)"
 titleLabel.TextColor3 = Color3.fromRGB(215, 200, 195)
 titleLabel.TextSize = 13
 titleLabel.TextXAlignment = Enum.TextXAlignment.Left
@@ -328,9 +407,9 @@ local function createTabContainer(name, canvasHeight)
 end
 
 local espContainer = createTabContainer("ESPContainer", 850)
-local combatContainer = createTabContainer("CombatContainer", 1020)
+local combatContainer = createTabContainer("CombatContainer", 1080)
 local playerContainer = createTabContainer("PlayerContainer", 1200)
-local settingsContainer = createTabContainer("SettingsContainer", 480) -- Calibrated canvas height
+local settingsContainer = createTabContainer("SettingsContainer", 480)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
@@ -371,10 +450,8 @@ do
                 task.wait(0.2)
                 local char = LocalPlayer.Character
                 local hum = char and char:FindFirstChildOfClass("Humanoid")
-                if hum then hum.Health = 0 elseif char then char:BreakJoints() end
-                pcall(function()
-                    StarterGui:SetCore("SendNotification", { Title = "Sacrifice Complete", Text = "Your vessel has returned to the void.", Duration = 2 })
-                end)
+                if hum then hum.Health = 0 elseif char then pcall(function() char:BreakJoints() end) end
+                notify("Sacrifice Complete", "Your vessel has returned to the void.", 2)
                 task.wait(1.5)
                 resetClickCount = 0
                 resetCharButton.Text = "Sacrifice Vessel"
@@ -384,7 +461,6 @@ do
     end)
 end
 
--- Spacer Frame sized to land precisely at the bottom scroll limit
 local settingsSpacer = Instance.new("Frame")
 settingsSpacer.Name = "SettingsSpacer"
 settingsSpacer.Size = UDim2.new(1, 0, 0, 340)
@@ -393,10 +469,8 @@ settingsSpacer.BorderSizePixel = 0
 settingsSpacer.LayoutOrder = 9
 settingsSpacer.Parent = settingsContainer
 
--- Purge & Terminate Script at the exact bottom scroll limit of Settings
 local killScriptButton = createButton(settingsContainer, "Purge & Terminate Script", Color3.fromRGB(250, 40, 40), 10)
 
--- Complete Script Termination Function
 local function terminateScript()
     for _, conn in pairs(Connections) do
         if typeof(conn) == "RBXScriptConnection" then
@@ -425,8 +499,11 @@ local function terminateScript()
         LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
         LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
         LocalPlayer.CameraMode = originalCameraSettings.CameraMode
-        Camera.CameraType = Enum.CameraType.Custom
-        Camera.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        local cam = getActiveCamera()
+        if cam then
+            cam.CameraType = Enum.CameraType.Custom
+            cam.CameraSubject = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+        end
     end)
 
     pcall(function()
@@ -441,7 +518,7 @@ end
 do
     local killClickCount = 0
     local lastKillClickTime = 0
-    
+
     local chantPhrases = {
         "Cease the ritual whispers... (1/10)",
         "Sever the unholy tethers... (2/10)",
@@ -473,7 +550,6 @@ do
             killScriptButton.Text = chantPhrases[killClickCount] or string.format("Terminate Script? (%d/10 clicks)", killClickCount)
             killScriptButton.BackgroundColor3 = Color3.fromRGB(math.min(20 + (killClickCount * 18), 180), 10, 15)
         else
-            -- Final layer click action (Unchanged behavior)
             killScriptButton.Text = "NULLIFYING REALITY..."
             killScriptButton.BackgroundColor3 = Color3.fromRGB(255, 0, 0)
             task.spawn(function()
@@ -808,7 +884,7 @@ local function updateAvatarPreview()
             clonedAvatarModel.Parent = avatarViewport
             local head = clonedAvatarModel:FindFirstChild("Head") or clonedAvatarModel.PrimaryPart
             if head then
-                local rootPart = clonedAvatarModel:FindFirstChild("HumanoidRootPart") or head
+                local rootPart = getCharacterRoot(clonedAvatarModel) or head
                 avCam.CFrame = CFrame.new(rootPart.Position + Vector3.new(0, 0.5, -7.5), rootPart.Position + Vector3.new(0, 0.5, 0))
             end
         end
@@ -862,14 +938,14 @@ local function switchTab(activeTab, activeBtn)
     combatContainer.Visible = false
     playerContainer.Visible = false
     settingsContainer.Visible = false
-    
+
     espTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     espTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
     combatTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     combatTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     playerTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
-    
+
     activeTab.Visible = true
     if activeBtn then
         activeBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
@@ -887,8 +963,8 @@ local function getModelMassKg(model)
     local totalMass = 0
     pcall(function()
         for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then 
-                totalMass = totalMass + part:GetMass() 
+            if part:IsA("BasePart") then
+                totalMass = totalMass + part:GetMass()
             end
         end
     end)
@@ -897,9 +973,9 @@ end
 
 local function isTargetAnchored(charModel, humanoid)
     if not State.autoIgnoreAnchoredEnabled then return false end
-    local rootPart = charModel:FindFirstChild("HumanoidRootPart") or charModel:FindFirstChild("PrimaryPart") or charModel:FindFirstChildWhichIsA("BasePart")
+    local rootPart = getCharacterRoot(charModel)
     if rootPart and rootPart.Anchored then return true end
-    
+
     if humanoid and humanoid.Sit and humanoid.SeatPart then
         local seat = humanoid.SeatPart
         if seat.Anchored or (seat.AssemblyRootPart and seat.AssemblyRootPart.Anchored) then
@@ -912,9 +988,9 @@ end
 -- Helper specifically for ESP anchoring filter
 local function isModelAnchoredForESP(model, humanoid)
     if not State.espIgnoreAnchoredEnabled then return false end
-    local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("PrimaryPart") or model:FindFirstChildWhichIsA("BasePart")
+    local rootPart = getCharacterRoot(model)
     if rootPart and rootPart.Anchored then return true end
-    
+
     if humanoid and humanoid.Sit and humanoid.SeatPart then
         local seat = humanoid.SeatPart
         if seat.Anchored or (seat.AssemblyRootPart and seat.AssemblyRootPart.Anchored) then
@@ -929,10 +1005,6 @@ local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
 
 RunService.RenderStepped:Connect(function(dt)
-    if openButton.Visible then
-        openButton.Position = UDim2.new(0.5, -115 + math.random(-3, 3), 0, 1 + math.random(-2, 2))
-    end
-
     local fps = dt > 0 and math.floor(1 / dt) or 60
     topBarFpsLabel.Text = "FPS: " .. fps
     topBarFpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(255, 100, 100) or (fps >= 30 and Color3.fromRGB(255, 180, 100) or Color3.fromRGB(255, 50, 50))
@@ -940,7 +1012,7 @@ RunService.RenderStepped:Connect(function(dt)
     pcall(function()
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local root = getCharacterRoot(char)
 
         if statLabels["Name"] then
             statLabels["Name"].Text = LocalPlayer.Name
@@ -948,8 +1020,17 @@ RunService.RenderStepped:Connect(function(dt)
             local vel = root and root.AssemblyLinearVelocity or Vector3.new()
             statLabels["Speed (Studs/s)"].Text = string.format("%.1f studs/s", math.sqrt(vel.X * vel.X + vel.Z * vel.Z))
             statLabels["WalkSpeed"].Text = hum and tostring(math.floor(hum.WalkSpeed)) or "N/A"
-            statLabels["JumpHeight"].Text = string.format("%.1f", hum and (hum.UseJumpPower and hum.JumpPower or hum.JumpHeight) or 0)
-            statLabels["Status"].Text = hum and hum:GetState().Name or "Unknown"
+            local jumpVal = 0
+            if hum then
+                local ok, val = pcall(function() return hum.UseJumpPower and hum.JumpPower or hum.JumpHeight end)
+                jumpVal = ok and (val or 0) or (hum.JumpPower or 0)
+            end
+            statLabels["JumpHeight"].Text = string.format("%.1f", jumpVal)
+            local stateName = "Unknown"
+            if hum then
+                pcall(function() stateName = hum:GetState().Name end)
+            end
+            statLabels["Status"].Text = stateName
             statLabels["Weight (kg)"].Text = string.format("%d kg", char and getModelMassKg(char) or 0)
             statLabels["Gravity"].Text = string.format("%.1f", Workspace.Gravity)
             local pos = root and root.Position or Vector3.new()
@@ -960,7 +1041,7 @@ RunService.RenderStepped:Connect(function(dt)
     if State.hoverEnabled and not State.flyEnabled and not State.FlingActive then
         pcall(function()
             local char = LocalPlayer.Character
-            local root = char and char:FindFirstChild("HumanoidRootPart")
+            local root = getCharacterRoot(char)
             if root then
                 raycastParams.FilterDescendantsInstances = {char}
                 local rayResult = Workspace:Raycast(root.Position + Vector3.new(0, 3.8, 0), Vector3.new(0, -150, 0), raycastParams)
@@ -1033,7 +1114,7 @@ local function createESPForModel(model)
     highlight.OutlineColor = initialColor
     highlight.OutlineTransparency = 0
     highlight.Enabled = false
-    highlight.Parent = model
+    pcall(function() highlight.Parent = model end)
 
     espCache[model] = {
         Folder = espFolder,
@@ -1048,8 +1129,8 @@ end
 local function removeESPForModel(model)
     local data = espCache[model]
     if data then
-        if data.Folder then data.Folder:Destroy() end
-        if data.Highlight then data.Highlight:Destroy() end
+        if data.Folder then pcall(function() data.Folder:Destroy() end) end
+        if data.Highlight then pcall(function() data.Highlight:Destroy() end) end
         espCache[model] = nil
     end
 end
@@ -1069,14 +1150,16 @@ end)
 local cornersBuffer = table.create(8)
 RunService.RenderStepped:Connect(function()
     if not State.humEspEnabled then return end
+    local cam = getActiveCamera()
+    if not cam then return end
 
     local localChar = LocalPlayer.Character
-    local localRoot = localChar and localChar:FindFirstChild("HumanoidRootPart")
-    local localPos = localRoot and localRoot.Position or Camera.CFrame.Position
+    local localRoot = getCharacterRoot(localChar)
+    local localPos = localRoot and localRoot.Position or cam.CFrame.Position
 
     for model, data in pairs(espCache) do
         local hum = model:FindFirstChildOfClass("Humanoid")
-        local rootPart = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("PrimaryPart") or model:FindFirstChildWhichIsA("BasePart")
+        local rootPart = getCharacterRoot(model)
 
         if model.Parent and hum and rootPart and hum.Health > 0 and not isModelAnchoredForESP(model, hum) then
             local isPlayer = Players:GetPlayerFromCharacter(model) ~= nil
@@ -1085,18 +1168,24 @@ RunService.RenderStepped:Connect(function()
             local textColor = isPlayer and Colors.VesselText or Colors.AbomText
             local strokeColor = isPlayer and Color3.fromRGB(0, 0, 0) or Colors.AbomStroke
 
-            if data.Highlight.OutlineColor ~= espColor then
-                data.Highlight.FillColor = fillCol
-                data.Highlight.OutlineColor = espColor
+            if data.Highlight and data.Highlight.OutlineColor ~= espColor then
+                pcall(function()
+                    data.Highlight.FillColor = fillCol
+                    data.Highlight.OutlineColor = espColor
+                end)
                 data.NameLabel.TextColor3 = textColor
                 data.HealthBarFill.BackgroundColor3 = espColor
                 data.NameLabel.TextStrokeColor3 = strokeColor
                 for _, line in ipairs(data.BoxLines) do line.BackgroundColor3 = espColor end
             end
 
-            data.Highlight.Enabled = true
+            if data.Highlight then pcall(function() data.Highlight.Enabled = true end) end
 
-            local cf, size = model:GetBoundingBox()
+            local cf, size
+            local okBox = pcall(function() cf, size = model:GetBoundingBox() end)
+            if not okBox or not cf or not size then
+                cf, size = rootPart.CFrame, rootPart.Size
+            end
             cf = cf + Vector3.new(0, 2, 0)
             local hX, hY, hZ = size.X/2, size.Y/2, size.Z/2
 
@@ -1107,14 +1196,14 @@ RunService.RenderStepped:Connect(function()
             cornersBuffer[5] = cf * Vector3.new(-hX, -hY, hZ)
             cornersBuffer[6] = cf * Vector3.new(hX, -hY, hZ)
             cornersBuffer[7] = cf * Vector3.new(hX, hY, hZ)
-            cornersBuffer[8] = cf * Vector3.new(-hX, -hY, hZ)
+            cornersBuffer[8] = cf * Vector3.new(-hX, hY, hZ)
 
             local minX, minY = math.huge, math.huge
             local maxX, maxY = -math.huge, -math.huge
             local onScreenCount = 0
 
             for i = 1, 8 do
-                local screenPos, onScreen = Camera:WorldToViewportPoint(cornersBuffer[i])
+                local screenPos, onScreen = cam:WorldToViewportPoint(cornersBuffer[i])
                 if onScreen then onScreenCount = onScreenCount + 1 end
                 if screenPos.X < minX then minX = screenPos.X end
                 if screenPos.X > maxX then maxX = screenPos.X end
@@ -1146,7 +1235,8 @@ RunService.RenderStepped:Connect(function()
                 data.NameLabel.Text = string.format("%s | HP: %d | %dkg | %dm", model.Name, math.floor(hum.Health), getModelMassKg(model), math.floor((localPos - rootPart.Position).Magnitude))
                 data.NameLabel.Visible = true
 
-                local healthPercent = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+                local maxHp = math.max(hum.MaxHealth, 1)
+                local healthPercent = math.clamp(hum.Health / maxHp, 0, 1)
                 data.HealthBarBg.Size = UDim2.new(0, 3, 0, boxH)
                 data.HealthBarBg.Position = UDim2.new(0, minX - 6, 0, minY)
                 data.HealthBarFill.Size = UDim2.new(1, 0, healthPercent, 0)
@@ -1158,7 +1248,7 @@ RunService.RenderStepped:Connect(function()
                 data.HealthBarBg.Visible = false
             end
         else
-            data.Highlight.Enabled = false
+            if data.Highlight then pcall(function() data.Highlight.Enabled = false end) end
             for _, line in ipairs(data.BoxLines) do line.Visible = false end
             data.NameLabel.Visible = false
             data.HealthBarBg.Visible = false
@@ -1172,25 +1262,25 @@ debugButton.MouseButton1Click:Connect(function()
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Humanoid") and obj.Parent then createESPForModel(obj.Parent) end
     end
-    pcall(function()
-        StarterGui:SetCore("SendNotification", { Title = "Ritual Purge", Text = "ESP cache cleansed, targets summoned anew.", Duration = 3 })
-    end)
+    notify("Ritual Purge", "ESP cache cleansed, targets summoned anew.", 3)
 end)
 
 -- Target List & Fling Logic
 local function GetCategorizedTargets()
     local playerTargets, entityTargets = {}, {}
     local localChar = LocalPlayer.Character
-    local localPos = (localChar and localChar:FindFirstChild("HumanoidRootPart")) and localChar.HumanoidRootPart.Position or Camera.CFrame.Position
+    local cam = getActiveCamera()
+    local localRoot = getCharacterRoot(localChar)
+    local localPos = localRoot and localRoot.Position or (cam and cam.CFrame.Position or Vector3.new())
 
     for _, obj in ipairs(Workspace:GetDescendants()) do
         if obj:IsA("Humanoid") then
             local charModel = obj.Parent
             if charModel and charModel:IsA("Model") and charModel ~= localChar then
                 if not isTargetAnchored(charModel, obj) then
-                    local rootPart = charModel:FindFirstChild("HumanoidRootPart") or charModel:FindFirstChild("PrimaryPart") or charModel:FindFirstChildWhichIsA("BasePart")
+                    local rootPart = getCharacterRoot(charModel)
                     local dist = rootPart and (localPos - rootPart.Position).Magnitude or math.huge
-                    
+
                     local targetData = { Name = charModel.Name .. " (" .. charModel.ClassName .. ")", Model = charModel, Humanoid = obj, Distance = dist }
                     if Players:GetPlayerFromCharacter(charModel) then
                         table.insert(playerTargets, targetData)
@@ -1201,11 +1291,11 @@ local function GetCategorizedTargets()
             end
         end
     end
-    
+
     local sortFunc = State.targetNearestEnabled and function(a, b) return a.Distance < b.Distance end or function(a, b) return a.Name:lower() < b.Name:lower() end
     table.sort(playerTargets, sortFunc)
     table.sort(entityTargets, sortFunc)
-    
+
     return playerTargets, entityTargets
 end
 
@@ -1232,12 +1322,12 @@ end
 
 local function PopulateList(scrollFrame, targets, filterText, isPlayer)
     for _, child in pairs(scrollFrame:GetChildren()) do child:Destroy() end
-    
+
     local yPos = 5
     for _, targetData in ipairs(targets) do
         if filterText == "" or string.find(targetData.Name:lower(), filterText, 1, true) then
             local targetKey = tostring(targetData.Model)
-            
+
             local entry = Instance.new("Frame")
             entry.Size = UDim2.new(1, -6, 0, 28)
             entry.Position = UDim2.new(0, 3, 0, yPos)
@@ -1245,7 +1335,7 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
             entry.BorderSizePixel = 0
             entry.Parent = scrollFrame
             addCorner(entry, 4)
-            
+
             local checkbox = Instance.new("TextButton")
             checkbox.Size = UDim2.new(0, 18, 0, 18)
             checkbox.Position = UDim2.new(0, 4, 0.5, -9)
@@ -1254,7 +1344,7 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
             checkbox.Text = ""
             checkbox.Parent = entry
             addCorner(checkbox, 3)
-            
+
             local checkmark = Instance.new("TextLabel")
             checkmark.Size = UDim2.new(1, 0, 1, 0)
             checkmark.BackgroundTransparency = 1
@@ -1264,7 +1354,7 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
             checkmark.Font = Enum.Font.GothamBold
             checkmark.Visible = SelectedTargets[targetKey] ~= nil
             checkmark.Parent = checkbox
-            
+
             local distText = targetData.Distance ~= math.huge and string.format(" [%dm]", math.floor(targetData.Distance)) or ""
             local nameLab = Instance.new("TextLabel")
             nameLab.Size = UDim2.new(1, -28, 1, 0)
@@ -1280,14 +1370,14 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
                 nameLab.TextStrokeColor3 = Colors.AbomStroke
             end
             nameLab.Parent = entry
-            
+
             local clickBtn = Instance.new("TextButton")
             clickBtn.Size = UDim2.new(1, 0, 1, 0)
             clickBtn.BackgroundTransparency = 1
             clickBtn.Text = ""
             clickBtn.ZIndex = 2
             clickBtn.Parent = entry
-            
+
             clickBtn.MouseButton1Click:Connect(function()
                 if SelectedTargets[targetKey] then
                     SelectedTargets[targetKey] = nil
@@ -1298,7 +1388,7 @@ local function PopulateList(scrollFrame, targets, filterText, isPlayer)
                 end
                 UpdateFlingStatus()
             end)
-            
+
             TargetCheckboxes[targetKey] = { Entry = entry, Checkmark = checkmark }
             yPos = yPos + 30
         end
@@ -1378,57 +1468,111 @@ local function GetModelMass(model)
     return math.max(getModelMassKg(model), 1)
 end
 
+-- Helper to suppress swim animations while keeping Swimming physics state intact
+local function suppressSwimAnimations(humanoid)
+    if not humanoid then return end
+    local animator = humanoid:FindFirstChildOfClass("Animator")
+    if animator then
+        for _, track in ipairs(animator:GetPlayingAnimationTracks()) do
+            local animName = (track.Animation and track.Animation.Name:lower()) or track.Name:lower()
+            if string.find(animName, "swim", 1, true) then
+                pcall(function() track:Stop(0) end)
+            end
+        end
+    end
+end
+
 local function SkidSelectionAxisFlingModel(TargetData)
     local Character = LocalPlayer.Character
     local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
-    local RootPart = Humanoid and Humanoid.RootPart
+    local RootPart = (Humanoid and Humanoid.RootPart) or getCharacterRoot(Character)
     local TCharacter = TargetData.Model
-    
+    local cam = getActiveCamera()
+
     if not TCharacter or not TCharacter.Parent then return end
-    
+
     local THumanoid = TargetData.Humanoid
     if isTargetAnchored(TCharacter, THumanoid) then return end
-    
-    local TRootPart = THumanoid and THumanoid.RootPart
+
+    local TRootPart = (THumanoid and THumanoid.RootPart) or getCharacterRoot(TCharacter)
     local seatPart = THumanoid and THumanoid.SeatPart
     local targetPart = seatPart or TRootPart or TCharacter:FindFirstChild("Head") or TCharacter:FindFirstChildWhichIsA("BasePart")
-    
-    if targetPart then
-        Camera.CameraType = Enum.CameraType.Custom
-        LocalPlayer.CameraMaxZoomDistance = 999999
-        Camera.CameraSubject = targetPart
+
+    if targetPart and cam then
+        pcall(function()
+            cam.CameraType = Enum.CameraType.Custom
+            LocalPlayer.CameraMaxZoomDistance = 999999
+            cam.CameraSubject = targetPart
+        end)
     end
-    
+
     if Character and Humanoid and RootPart then
         if not env.OldPos or RootPart.Velocity.Magnitude < 50 then
             env.OldPos = RootPart.CFrame
         end
-        
+
         local baseTargetPart = TCharacter:FindFirstChildWhichIsA("BasePart")
         if not baseTargetPart then return end
-        
+
         local exponentialMultiplier = math.clamp(math.pow(GetModelMass(TCharacter), 1.3), 1, 50)
-        
+        local lastTargetVel = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity) or Vector3.new()
+        local lastSampleTime = tick()
+
         local function FPosAxis(BasePart)
+            local now = tick()
+            local dt = math.max(now - lastSampleTime, 1 / 240)
+            lastSampleTime = now
+
             local selectedMode = FlingDirections[State.currentDirIndex]
             local velocityTarget = Vector3.new()
-            
+
             State.orbitAngleCounter = State.orbitAngleCounter + State.orbitSpeed
-            local offsetX = math.cos(State.orbitAngleCounter) * 1.2
-            local offsetZ = math.sin(State.orbitAngleCounter) * 1.2
-            
+            local offsetX = math.cos(State.orbitAngleCounter) * 0.45
+            local offsetZ = math.sin(State.orbitAngleCounter) * 0.45
+
             local actualTargetPos = (seatPart and seatPart.Position) or (TRootPart and TRootPart.Position) or BasePart.Position
             local targetVelocity = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity) or Vector3.new()
-            
+
             local predictedPos = actualTargetPos
-            if State.movementPredictorEnabled and targetVelocity.Magnitude > 0.1 then
+            if State.movementPredictorEnabled and targetVelocity.Magnitude > 0.25 then
                 local dist = (RootPart.Position - actualTargetPos).Magnitude
-                local dynamicLead = math.clamp(dist / 50 * 0.4, 0.1, 0.5) * math.min(targetVelocity.Magnitude / 16, 2)
-                predictedPos = actualTargetPos + (targetVelocity * dynamicLead)
+                local okPing, rawPing = pcall(function() return LocalPlayer:GetNetworkPing() end)
+                local pingOffset = okPing and math.clamp(rawPing or 0.05, 0, 0.25) or 0.05
+
+                local distanceFactor = math.clamp((dist - 1.5) / 45, 0, 1)
+                local speedFactor = math.clamp(targetVelocity.Magnitude / 24, 0.4, 1.5)
+                local leadTime = math.clamp((distanceFactor * 0.35 * speedFactor) + (pingOffset * 0.85), 0, 0.5)
+
+                local accel = (targetVelocity - lastTargetVel) / dt
+                local alignment = targetVelocity.Unit:Dot(accel.Magnitude > 0.1 and accel.Unit or targetVelocity.Unit)
+                if alignment < -0.2 then
+                    leadTime = leadTime * 0.55
+                end
+
+                local horizVel = Vector3.new(targetVelocity.X, 0, targetVelocity.Z)
+                local horizAccel = Vector3.new(accel.X, 0, accel.Z)
+                local predictedHoriz = horizVel * leadTime + 0.5 * horizAccel * (leadTime * leadTime) * 0.35
+
+                local isAirborne = false
+                if THumanoid then
+                    local okFloor, floorMat = pcall(function() return THumanoid.FloorMaterial end)
+                    isAirborne = (okFloor and floorMat == Enum.Material.Air) or math.abs(targetVelocity.Y) > 2
+                end
+
+                local predictedVertY = 0
+                if isAirborne then
+                    local g = Workspace.Gravity or 196.2
+                    predictedVertY = (targetVelocity.Y * leadTime) - (0.5 * g * leadTime * leadTime)
+                else
+                    predictedVertY = targetVelocity.Y * leadTime
+                end
+
+                predictedPos = actualTargetPos + Vector3.new(predictedHoriz.X, predictedVertY, predictedHoriz.Z)
             end
-            
-            local targetDestPos = predictedPos + Vector3.new(offsetX, 0.5, offsetZ)
-            
+            lastTargetVel = targetVelocity
+
+            local targetDestPos = predictedPos + Vector3.new(offsetX, 0, offsetZ)
+
             if selectedMode == "The Skies" then
                 velocityTarget = Vector3.new(0, 1.5e9, 0) * exponentialMultiplier
             elseif selectedMode == "The Abyss" then
@@ -1436,120 +1580,159 @@ local function SkidSelectionAxisFlingModel(TargetData)
             elseif selectedMode == "The Null" then
                 velocityTarget = Vector3.new(math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9), math.random(-1.5e9, 1.5e9))
             end
-            
-            local maxSpinAngle = tick() * State.spinSpeed
-            local faceCFrame = CFrame.new(targetDestPos) * CFrame.Angles(maxSpinAngle, maxSpinAngle * 1.5, maxSpinAngle * 0.8)
 
-            if State.seatedFlingEnabled then
-                Humanoid.Sit = true
-                RootPart.CFrame = faceCFrame
-                RootPart.Velocity = velocityTarget
-                RootPart.RotVelocity = Vector3.new(1.5e9, 1.5e9, 1.5e9)
-            else
-                RootPart.CFrame = faceCFrame
-                Character:SetPrimaryPartCFrame(faceCFrame)
-                RootPart.Velocity = velocityTarget
-                RootPart.RotVelocity = Vector3.new(1.5e9, 1.5e9, 1.5e9)
-            end
+            local faceCFrame = CFrame.lookAt(targetDestPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
+
+            pcall(function()
+                if State.seatedFlingEnabled then
+                    Humanoid.Sit = true
+                    RootPart.CFrame = faceCFrame
+                    RootPart.Velocity = velocityTarget
+                    RootPart.RotVelocity = Vector3.new(0, 1.5e9, 0)
+                else
+                    RootPart.CFrame = faceCFrame
+                    Character:SetPrimaryPartCFrame(faceCFrame)
+                    RootPart.Velocity = velocityTarget
+                    RootPart.RotVelocity = Vector3.new(0, 1.5e9, 0)
+                end
+            end)
         end
-        
-        Workspace.FallenPartsDestroyHeight = 0/0
+
+        pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
         local BV = Instance.new("BodyVelocity")
         BV.Parent = RootPart
         BV.Velocity = Vector3.new()
         BV.MaxForce = Vector3.new(9e9, 9e9, 9e9)
-        
+
+        local animSuppressConn
         if State.seatedFlingEnabled then
-            Humanoid.Sit = true
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            pcall(function()
+                Humanoid.Sit = true
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            end)
         else
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
-            Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+            pcall(function()
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, false)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+                Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+            end)
+            suppressSwimAnimations(Humanoid)
+
+            local animator = Humanoid:FindFirstChildOfClass("Animator")
+            if animator then
+                animSuppressConn = animator.AnimationPlayed:Connect(function(track)
+                    local animName = (track.Animation and track.Animation.Name:lower()) or track.Name:lower()
+                    if string.find(animName, "swim", 1, true) then
+                        pcall(function() track:Stop(0) end)
+                    end
+                end)
+            end
         end
-        
-        if Physics.flingSwimBv then Physics.flingSwimBv:Destroy() end
+
+        if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) end
         Physics.flingSwimBv = Instance.new("BodyVelocity")
         Physics.flingSwimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
         Physics.flingSwimBv.Velocity = Vector3.new(0, 0, 0)
         Physics.flingSwimBv.Parent = RootPart
-        
+
         local startTime = tick()
         repeat
             if RootPart and THumanoid then
                 if State.seatedFlingEnabled then
-                    Humanoid.Sit = true
+                    pcall(function() Humanoid.Sit = true end)
                 else
-                    if Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
-                        Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
-                        Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
-                    end
+                    pcall(function()
+                        if Humanoid:GetState() ~= Enum.HumanoidStateType.Swimming then
+                            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+                            Humanoid:ChangeState(Enum.HumanoidStateType.Swimming)
+                        end
+                    end)
+                    suppressSwimAnimations(Humanoid)
                 end
                 FPosAxis(targetPart)
-                task.wait()
+
+                local checkVel = (seatPart and seatPart.AssemblyLinearVelocity) or (TRootPart and TRootPart.AssemblyLinearVelocity)
+                if checkVel and checkVel.Magnitude > 140 then
+                    break
+                end
+
+                RunService.Heartbeat:Wait()
+            else
+                break
             end
-        until startTime + 2 < tick() or not State.FlingActive
-        
-        if Physics.flingSwimBv then Physics.flingSwimBv:Destroy() Physics.flingSwimBv = nil end
-        BV:Destroy()
-        
+        until startTime + 1.6 < tick() or not State.FlingActive
+
+        if animSuppressConn then animSuppressConn:Disconnect() end
+        if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) Physics.flingSwimBv = nil end
+        pcall(function() BV:Destroy() end)
+
         if State.seatedFlingEnabled then
-            Humanoid.Sit = true
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            pcall(function()
+                Humanoid.Sit = true
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            end)
         else
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-            Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
-            Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            pcall(function()
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+                Humanoid:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+                Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+            end)
         end
     end
 end
 
 local function ReturnToOriginalPosition()
-    if Physics.flingSwimBv then Physics.flingSwimBv:Destroy() Physics.flingSwimBv = nil end
+    if Physics.flingSwimBv then pcall(function() Physics.flingSwimBv:Destroy() end) Physics.flingSwimBv = nil end
     local character = LocalPlayer.Character
     local humanoid = character and character:FindFirstChildOfClass("Humanoid")
-    local rootPart = humanoid and humanoid.RootPart
-    
+    local rootPart = (humanoid and humanoid.RootPart) or getCharacterRoot(character)
+
     if character and rootPart and env.OldPos then
         local startTime = tick()
         repeat
-            if State.seatedFlingEnabled then
-                humanoid.Sit = true
-            end
-            rootPart.CFrame = env.OldPos * CFrame.new(0, 0.5, 0)
-            character:SetPrimaryPartCFrame(env.OldPos * CFrame.new(0, 0.5, 0))
-            if not State.seatedFlingEnabled then
-                humanoid:ChangeState("GettingUp")
-            end
-            for _, part in pairs(character:GetChildren()) do
-                if part:IsA("BasePart") then part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new() end
-            end
+            pcall(function()
+                if State.seatedFlingEnabled and humanoid then
+                    humanoid.Sit = true
+                end
+                rootPart.CFrame = env.OldPos * CFrame.new(0, 0.5, 0)
+                character:SetPrimaryPartCFrame(env.OldPos * CFrame.new(0, 0.5, 0))
+                if not State.seatedFlingEnabled and humanoid then
+                    humanoid:ChangeState("GettingUp")
+                end
+                for _, part in pairs(character:GetChildren()) do
+                    if part:IsA("BasePart") then part.Velocity, part.RotVelocity = Vector3.new(), Vector3.new() end
+                end
+            end)
             task.wait()
         until (rootPart.Position - env.OldPos.p).Magnitude < 15 or (tick() - startTime) > 2
-        
-        Workspace.FallenPartsDestroyHeight = env.FPDH
+
+        pcall(function() Workspace.FallenPartsDestroyHeight = env.FPDH end)
     end
 
-    Camera.CameraType = Enum.CameraType.Custom
-    Camera.CameraSubject = humanoid
+    local cam = getActiveCamera()
+    if cam and humanoid then
+        pcall(function()
+            cam.CameraType = Enum.CameraType.Custom
+            cam.CameraSubject = humanoid
+        end)
+    end
 end
 
 startFlingBtn.MouseButton1Click:Connect(function()
     if State.FlingActive then return end
-    local mode = FlingDirections[State.currentDirIndex]
-    local root = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+    local root = getCharacterRoot(LocalPlayer.Character)
     if root then env.OldPos = root.CFrame end
-    
+
     if State.targetNearestEnabled then
         local nearest = GetNearestSingleTarget()
-        if not nearest then 
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Insufficient", Text = "No valid souls found in the void!", Duration = 2 }) end)
-            return 
+        if not nearest then
+            notify("Insufficient", "No valid souls found in the void!", 2)
+            return
         end
         State.FlingActive = true
         UpdateFlingStatus()
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Futile", Text = "Initiating Absolute Destruction", Duration = 2 }) end)
-        
+        notify("Futile", "Initiating Absolute Destruction", 2)
+
         task.spawn(function()
             while State.FlingActive do
                 local currentNearest = GetNearestSingleTarget()
@@ -1557,22 +1740,22 @@ startFlingBtn.MouseButton1Click:Connect(function()
                     SkidSelectionAxisFlingModel(currentNearest)
                 end
                 UpdateFlingStatus()
-                task.wait(0.2)
+                task.wait(0.05)
             end
             ReturnToOriginalPosition()
         end)
     else
         local count = 0
         for _ in pairs(SelectedTargets) do count = count + 1 end
-        if count == 0 then 
-            pcall(function() StarterGui:SetCore("SendNotification", { Title = "Insufficient", Text = "Select at least one soul first!", Duration = 2 }) end)
-            return 
+        if count == 0 then
+            notify("Insufficient", "Select at least one soul first!", 2)
+            return
         end
-        
+
         State.FlingActive = true
         UpdateFlingStatus()
-        pcall(function() StarterGui:SetCore("SendNotification", { Title = "Futile", Text = "Initiating Absolute Destruction", Duration = 2 }) end)
-        
+        notify("Futile", "Initiating Absolute Destruction", 2)
+
         task.spawn(function()
             while State.FlingActive do
                 for key, targetData in pairs(SelectedTargets) do
@@ -1581,17 +1764,17 @@ startFlingBtn.MouseButton1Click:Connect(function()
                         if TargetCheckboxes[key] then TargetCheckboxes[key].Checkmark.Visible = false end
                     end
                 end
-                
+
                 for _, targetData in pairs(SelectedTargets) do
                     if State.FlingActive then
                         SkidSelectionAxisFlingModel(targetData)
-                        task.wait(0.1)
+                        task.wait(0.03)
                     else
                         break
                     end
                 end
                 UpdateFlingStatus()
-                task.wait(0.5)
+                task.wait(0.15)
             end
             ReturnToOriginalPosition()
         end)
@@ -1602,7 +1785,7 @@ stopFlingBtn.MouseButton1Click:Connect(function()
     if not State.FlingActive then return end
     State.FlingActive = false
     UpdateFlingStatus()
-    pcall(function() StarterGui:SetCore("SendNotification", { Title = "Seal", Text = "Power sealed.", Duration = 2 }) end)
+    notify("Seal", "Power sealed.", 2)
     task.spawn(ReturnToOriginalPosition)
 end)
 
@@ -1631,56 +1814,57 @@ local function startFly()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not char or not hum then return end
-    
+
     local seatPart = hum.SeatPart
-    local flyTargetPart = seatPart and (seatPart.AssemblyRootPart or seatPart.Parent.PrimaryPart or seatPart) or char:FindFirstChild("HumanoidRootPart")
+    local flyTargetPart = seatPart and (seatPart.AssemblyRootPart or (seatPart.Parent and seatPart.Parent.PrimaryPart) or seatPart) or getCharacterRoot(char)
     if not flyTargetPart then return end
-    
-    if not seatPart then hum.PlatformStand = true end
-    
-    if Physics.bg then Physics.bg:Destroy() end
-    if Physics.bv then Physics.bv:Destroy() end
-    
+
+    if not seatPart then pcall(function() hum.PlatformStand = true end) end
+
+    if Physics.bg then pcall(function() Physics.bg:Destroy() end) end
+    if Physics.bv then pcall(function() Physics.bv:Destroy() end) end
+
     Physics.bg = Instance.new("BodyGyro", flyTargetPart)
     Physics.bg.P, Physics.bg.maxTorque = 9e4, Vector3.new(9e4, 9e4, 9e4)
     Physics.bg.cframe = flyTargetPart.CFrame
-    
+
     Physics.bv = Instance.new("BodyVelocity", flyTargetPart)
     Physics.bv.Velocity, Physics.bv.MaxForce = Vector3.new(), Vector3.new(9e4, 9e4, 9e4)
 
     if Connections.fly then Connections.fly:Disconnect() end
     Connections.fly = RunService.RenderStepped:Connect(function()
         local currentHum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if not currentHum then stopFly() return end
-        
+        local cam = getActiveCamera()
+        if not currentHum or not cam then stopFly() return end
+
         local currentSeat = currentHum.SeatPart
-        local activeTarget = currentSeat and (currentSeat.AssemblyRootPart or currentSeat.Parent.PrimaryPart or currentSeat) or (LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart"))
+        local activeTarget = currentSeat and (currentSeat.AssemblyRootPart or (currentSeat.Parent and currentSeat.Parent.PrimaryPart) or currentSeat) or getCharacterRoot(LocalPlayer.Character)
         if not activeTarget then return end
-        
+
         if Physics.bv and Physics.bv.Parent ~= activeTarget then
             Physics.bv.Parent = activeTarget
             Physics.bg.Parent = activeTarget
         end
 
-        Physics.bg.cframe = Camera.CFrame
+        Physics.bg.cframe = cam.CFrame
         local moveDir = Vector3.new()
         local moveVector = currentHum.MoveDirection
-        
+
         if moveVector.Magnitude > 0 then
-            local camCF = Camera.CFrame
+            local camCF = cam.CFrame
             local flatMove = camCF:VectorToObjectSpace(moveVector)
             moveDir = (camCF.LookVector * -flatMove.Z) + (camCF.RightVector * flatMove.X)
         end
 
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
         if State.joystickEnabled and State.joystickDir.Magnitude > 0 then
-            moveDir = moveDir + (Camera.CFrame.RightVector * State.joystickDir.X) + (Camera.CFrame.LookVector * -State.joystickDir.Y)
+            moveDir = moveDir + (cam.CFrame.RightVector * State.joystickDir.X) + (cam.CFrame.LookVector * -State.joystickDir.Y)
         end
 
         Physics.bv.Velocity = moveDir.Magnitude > 0 and moveDir.Unit * State.flySpeed or Vector3.new(0, 0.1, 0)
@@ -1690,9 +1874,9 @@ end
 stopFly = function()
     if Connections.fly then Connections.fly:Disconnect() Connections.fly = nil end
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then hum.PlatformStand = false end
-    if Physics.bg then Physics.bg:Destroy() Physics.bg = nil end
-    if Physics.bv then Physics.bv:Destroy() Physics.bv = nil end
+    if hum then pcall(function() hum.PlatformStand = false end) end
+    if Physics.bg then pcall(function() Physics.bg:Destroy() end) Physics.bg = nil end
+    if Physics.bv then pcall(function() Physics.bv:Destroy() end) Physics.bv = nil end
 end
 
 -- Unconstrained Vortex Spin Mechanics
@@ -1701,7 +1885,7 @@ local function startSpin()
     Connections.spin = RunService.RenderStepped:Connect(function(dt)
         if not State.spinEnabled then return end
         local char = LocalPlayer.Character
-        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local root = getCharacterRoot(char)
         if root then
             root.CFrame = root.CFrame * CFrame.Angles(0, State.avatarSpinSpeed * dt, 0)
         end
@@ -1719,21 +1903,24 @@ startSeatedSwim = function()
         if not State.seatedSwimEnabled then return end
         local char = LocalPlayer.Character
         local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = char and char:FindFirstChild("HumanoidRootPart")
-        if not char or not hum or not root then 
-            if Physics.seatedSwimBv then Physics.seatedSwimBv:Destroy() Physics.seatedSwimBv = nil end
-            return 
+        local root = getCharacterRoot(char)
+        local cam = getActiveCamera()
+        if not char or not hum or not root or not cam then
+            if Physics.seatedSwimBv then pcall(function() Physics.seatedSwimBv:Destroy() end) Physics.seatedSwimBv = nil end
+            return
         end
 
-        hum.Sit = true
-        hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
-        pcall(function() hum:ChangeState(Enum.HumanoidStateType.Seated) end)
+        pcall(function()
+            hum.Sit = true
+            hum:SetStateEnabled(Enum.HumanoidStateType.Seated, true)
+            hum:ChangeState(Enum.HumanoidStateType.Seated)
+        end)
 
         local seat = hum.SeatPart
-        local targetPart = seat and (seat.AssemblyRootPart or seat.Parent.PrimaryPart or seat) or root
+        local targetPart = seat and (seat.AssemblyRootPart or (seat.Parent and seat.Parent.PrimaryPart) or seat) or root
 
         if not Physics.seatedSwimBv or Physics.seatedSwimBv.Parent ~= targetPart then
-            if Physics.seatedSwimBv then Physics.seatedSwimBv:Destroy() end
+            if Physics.seatedSwimBv then pcall(function() Physics.seatedSwimBv:Destroy() end) end
             Physics.seatedSwimBv = Instance.new("BodyVelocity")
             Physics.seatedSwimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
             Physics.seatedSwimBv.Parent = targetPart
@@ -1743,20 +1930,20 @@ startSeatedSwim = function()
         local moveDir = Vector3.new()
         local moveVector = hum.MoveDirection
         if moveVector.Magnitude > 0 then
-            local camCF = Camera.CFrame
+            local camCF = cam.CFrame
             local flatMove = camCF:VectorToObjectSpace(moveVector)
             moveDir = (camCF.LookVector * -flatMove.Z) + (camCF.RightVector * flatMove.X)
         end
 
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
         if State.joystickEnabled and State.joystickDir.Magnitude > 0 then
-            moveDir = moveDir + (Camera.CFrame.RightVector * State.joystickDir.X) + (Camera.CFrame.LookVector * -State.joystickDir.Y)
+            moveDir = moveDir + (cam.CFrame.RightVector * State.joystickDir.X) + (cam.CFrame.LookVector * -State.joystickDir.Y)
         end
 
         if moveDir.Magnitude > 0 then
@@ -1769,7 +1956,7 @@ end
 
 stopSeatedSwim = function()
     if Connections.seatedSwim then Connections.seatedSwim:Disconnect() Connections.seatedSwim = nil end
-    if Physics.seatedSwimBv then Physics.seatedSwimBv:Destroy() Physics.seatedSwimBv = nil end
+    if Physics.seatedSwimBv then pcall(function() Physics.seatedSwimBv:Destroy() end) Physics.seatedSwimBv = nil end
 end
 
 local function isWaterPart(obj)
@@ -1796,14 +1983,16 @@ end)
 
 local function startSwim()
     local char = LocalPlayer.Character
-    local root = char and char:FindFirstChild("HumanoidRootPart")
+    local root = getCharacterRoot(char)
     local hum = char and char:FindFirstChildOfClass("Humanoid")
     if not root or not hum then return end
 
-    hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
-    hum:ChangeState(Enum.HumanoidStateType.Swimming)
+    pcall(function()
+        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, true)
+        hum:ChangeState(Enum.HumanoidStateType.Swimming)
+    end)
 
-    if Physics.swimBv then Physics.swimBv:Destroy() end
+    if Physics.swimBv then pcall(function() Physics.swimBv:Destroy() end) end
     Physics.swimBv = Instance.new("BodyVelocity")
     Physics.swimBv.MaxForce = Vector3.new(9e4, 9e4, 9e4)
     Physics.swimBv.Velocity = Vector3.new(0, 0, 0)
@@ -1813,12 +2002,15 @@ local function startSwim()
     Connections.swim = RunService.Heartbeat:Connect(function()
         local currentChar = LocalPlayer.Character
         local currentHum = currentChar and currentChar:FindFirstChildOfClass("Humanoid")
-        local currentRoot = currentChar and currentChar:FindFirstChild("HumanoidRootPart")
-        if not currentHum or not currentRoot then return end
+        local currentRoot = getCharacterRoot(currentChar)
+        local cam = getActiveCamera()
+        if not currentHum or not currentRoot or not cam then return end
 
-        if currentHum:GetState() ~= Enum.HumanoidStateType.Swimming then
-            currentHum:ChangeState(Enum.HumanoidStateType.Swimming)
-        end
+        pcall(function()
+            if currentHum:GetState() ~= Enum.HumanoidStateType.Swimming then
+                currentHum:ChangeState(Enum.HumanoidStateType.Swimming)
+            end
+        end)
 
         if State.FlingActive then
             if Physics.swimBv then Physics.swimBv.MaxForce = Vector3.new(0, 0, 0) end
@@ -1826,7 +2018,7 @@ local function startSwim()
         end
 
         if not Physics.swimBv or Physics.swimBv.Parent ~= currentRoot then
-            if Physics.swimBv then Physics.swimBv:Destroy() end
+            if Physics.swimBv then pcall(function() Physics.swimBv:Destroy() end) end
             Physics.swimBv = Instance.new("BodyVelocity")
             Physics.swimBv.Parent = currentRoot
         end
@@ -1835,20 +2027,20 @@ local function startSwim()
         local moveDir = Vector3.new()
         local moveVector = currentHum.MoveDirection
         if moveVector.Magnitude > 0 then
-            local camCF = Camera.CFrame
+            local camCF = cam.CFrame
             local flatMove = camCF:VectorToObjectSpace(moveVector)
             moveDir = (camCF.LookVector * -flatMove.Z) + (camCF.RightVector * flatMove.X)
         end
 
-        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
-        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - cam.CFrame.LookVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - cam.CFrame.RightVector end
+        if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + cam.CFrame.RightVector end
         if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0, 1, 0) end
         if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0, 1, 0) end
 
         if State.joystickEnabled and State.joystickDir.Magnitude > 0 then
-            moveDir = moveDir + (Camera.CFrame.RightVector * State.joystickDir.X) + (Camera.CFrame.LookVector * -State.joystickDir.Y)
+            moveDir = moveDir + (cam.CFrame.RightVector * State.joystickDir.X) + (cam.CFrame.LookVector * -State.joystickDir.Y)
         end
 
         if moveDir.Magnitude > 0 then
@@ -1861,11 +2053,13 @@ end
 
 local function stopSwim()
     if Connections.swim then Connections.swim:Disconnect() Connections.swim = nil end
-    if Physics.swimBv then Physics.swimBv:Destroy() Physics.swimBv = nil end
+    if Physics.swimBv then pcall(function() Physics.swimBv:Destroy() end) Physics.swimBv = nil end
     local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-    if hum then 
-        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
-        hum:ChangeState(Enum.HumanoidStateType.GettingUp) 
+    if hum then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+            hum:ChangeState(Enum.HumanoidStateType.GettingUp)
+        end)
     end
 end
 
@@ -1895,7 +2089,7 @@ local function startInfJump()
     if Connections.infJump then Connections.infJump:Disconnect() end
     Connections.infJump = UserInputService.JumpRequest:Connect(function()
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then hum:ChangeState(Enum.HumanoidStateType.Jumping) end
+        if hum then pcall(function() hum:ChangeState(Enum.HumanoidStateType.Jumping) end) end
     end)
 end
 
@@ -1906,7 +2100,7 @@ end
 local function updateJoystickPos(inputPos)
     local center = joystickFrame.AbsolutePosition + (joystickFrame.AbsoluteSize / 2)
     local delta = inputPos - center
-    local maxRadius = joystickFrame.AbsoluteSize.X / 2
+    local maxRadius = math.max(joystickFrame.AbsoluteSize.X / 2, 1)
     if delta.Magnitude > maxRadius then delta = delta.Unit * maxRadius end
 
     joystickThumb.Position = UDim2.new(0.5, delta.X - 25, 0.5, delta.Y - 25)
@@ -1940,10 +2134,11 @@ local function startJoystick()
     Connections.joystick = RunService.RenderStepped:Connect(function()
         if not State.joystickEnabled or State.flyEnabled or State.swimEnabled then return end
         local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum and State.joystickDir.Magnitude > 0 then
-            local camCF = Camera.CFrame
+        local cam = getActiveCamera()
+        if hum and cam and State.joystickDir.Magnitude > 0 then
+            local camCF = cam.CFrame
             local moveDir = Vector3.new(camCF.RightVector.X * State.joystickDir.X + camCF.LookVector.X * State.joystickDir.Y, 0, camCF.RightVector.Z * State.joystickDir.X + camCF.LookVector.Z * State.joystickDir.Y)
-            if moveDir.Magnitude > 0 then hum:Move(moveDir.Unit, false) end
+            if moveDir.Magnitude > 0 then pcall(function() hum:Move(moveDir.Unit, false) end) end
         end
     end)
 end
@@ -1958,22 +2153,31 @@ end
 
 startCameraZoom = function()
     if Connections.cameraZoom then Connections.cameraZoom:Disconnect() end
-    LocalPlayer.CameraMaxZoomDistance, LocalPlayer.CameraMinZoomDistance, LocalPlayer.CameraMode = 999999, 0.5, Enum.CameraMode.Classic
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = 999999
+        LocalPlayer.CameraMinZoomDistance = 0.5
+        LocalPlayer.CameraMode = Enum.CameraMode.Classic
+    end)
     Connections.cameraZoom = RunService.Heartbeat:Connect(function()
-        if State.cameraZoomEnabled and LocalPlayer.CameraMaxZoomDistance ~= 999999 then
-            LocalPlayer.CameraMaxZoomDistance = 999999
+        if State.cameraZoomEnabled then
+            pcall(function()
+                if LocalPlayer.CameraMaxZoomDistance ~= 999999 then
+                    LocalPlayer.CameraMaxZoomDistance = 999999
+                end
+            end)
         end
     end)
 end
 
 stopCameraZoom = function()
     if Connections.cameraZoom then Connections.cameraZoom:Disconnect() Connections.cameraZoom = nil end
-    LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
-    LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
-    LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+    pcall(function()
+        LocalPlayer.CameraMaxZoomDistance = originalCameraSettings.CameraMaxZoomDistance
+        LocalPlayer.CameraMinZoomDistance = originalCameraSettings.CameraMinZoomDistance
+        LocalPlayer.CameraMode = originalCameraSettings.CameraMode
+    end)
 end
 
--- Initialize Astral Projection if enabled by default
 if State.cameraZoomEnabled then
     startCameraZoom()
 end
@@ -2013,7 +2217,9 @@ end
 
 local function stopNoTexture()
     if Connections.noTexture then Connections.noTexture:Disconnect() Connections.noTexture = nil end
-    Lighting.GlobalShadows, Lighting.FogEnd = originalLighting.GlobalShadows, originalLighting.FogEnd
+    pcall(function()
+        Lighting.GlobalShadows, Lighting.FogEnd = originalLighting.GlobalShadows, originalLighting.FogEnd
+    end)
 end
 
 local function startNoFog()
@@ -2030,7 +2236,9 @@ end
 
 local function stopNoFog()
     if Connections.noFog then Connections.noFog:Disconnect() Connections.noFog = nil end
-    Lighting.FogEnd, Lighting.FogStart = originalLighting.FogEnd, originalLighting.FogStart
+    pcall(function()
+        Lighting.FogEnd, Lighting.FogStart = originalLighting.FogEnd, originalLighting.FogStart
+    end)
 end
 
 local function startFullBright()
@@ -2044,7 +2252,9 @@ end
 
 local function stopFullBright()
     if Connections.fullBright then Connections.fullBright:Disconnect() Connections.fullBright = nil end
-    Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.OutdoorAmbient = originalLighting.Brightness, originalLighting.ClockTime, originalLighting.GlobalShadows, originalLighting.OutdoorAmbient
+    pcall(function()
+        Lighting.Brightness, Lighting.ClockTime, Lighting.GlobalShadows, Lighting.OutdoorAmbient = originalLighting.Brightness, originalLighting.ClockTime, originalLighting.GlobalShadows, originalLighting.OutdoorAmbient
+    end)
 end
 
 -- Button Bindings
@@ -2054,7 +2264,7 @@ humEspButton.MouseButton1Click:Connect(function()
     humEspButton.BackgroundColor3 = State.humEspEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
     if not State.humEspEnabled then
         for _, data in pairs(espCache) do
-            if data.Highlight then data.Highlight.Enabled = false end
+            if data.Highlight then pcall(function() data.Highlight.Enabled = false end) end
             for _, line in ipairs(data.BoxLines) do line.Visible = false end
             if data.NameLabel then data.NameLabel.Visible = false end
             if data.HealthBarBg then data.HealthBarBg.Visible = false end
