@@ -1,13 +1,6 @@
 -- Target Engine: Roblox Luau
--- Updated: Merged Camera NoClip (Invisicam) into Astral Projection View and
--- removed the separate Camera NoClip toggle; moved Anti-AFK, Auto-Rejoin on Kick,
--- and Purge Ad Billboards to Settings, enabling Auto-Rejoin and Purge Ad Billboards
--- by default with active visual styling. Removed 3D World Rendering button.
--- Updated Goto Player into a dual-list humanoid selector (Vessels & Abominations)
--- without enclosed parentheses. Removed Codex tab and all associated features.
--- Updated Fling size consistency for larger targets while preserving normal-target behavior.
--- Updated Fling orientation so character RightVector points downward while keeping all other motion.
--- Added Purge Blur Effects toggle button in Settings (enabled by default).
+-- Updated: Added "Walk on Water" toggle button in the Vessel tab and client-side
+-- water surface support for both Terrain water and water/fluid/ocean/sea parts.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -22,7 +15,6 @@ local VirtualUser = game:GetService("VirtualUser")
 
 local env = (type(getgenv) == "function" and getgenv()) or _G
 
--- Terminate any previously running script instance so only one copy can exist at a time
 if env.CultOfEntropyInstance and type(env.CultOfEntropyInstance.Terminate) == "function" then
     pcall(function()
         env.CultOfEntropyInstance.Terminate()
@@ -55,8 +47,6 @@ local function getActiveCamera()
     return Workspace.CurrentCamera or Workspace:FindFirstChildOfClass("Camera")
 end
 
-local Camera = getActiveCamera()
-
 local LocalPlayer = Players.LocalPlayer
 if not LocalPlayer then
     Players:GetPropertyChangedSignal("LocalPlayer"):Wait()
@@ -66,7 +56,7 @@ end
 local function getGuiParent()
     local target = nil
     pcall(function()
-        if gethui then
+        if type(gethui) == "function" then
             target = gethui()
         end
     end)
@@ -78,8 +68,7 @@ local function getGuiParent()
     end)
     if target then return target end
 
-    local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10)
-    return pg
+    return LocalPlayer:FindFirstChildOfClass("PlayerGui") or LocalPlayer:WaitForChild("PlayerGui", 10)
 end
 
 local guiParent = getGuiParent()
@@ -106,24 +95,18 @@ local function destroyAllExistingGuis()
         local pg = LocalPlayer:FindFirstChildOfClass("PlayerGui")
         destroyExistingGuiInContainer(pg)
     end)
-    pcall(function()
-        for _, obj in ipairs(Workspace:GetDescendants()) do
-            if obj.Name == "UniversalBodyPartHighlight" then
-                obj:Destroy()
-            end
-        end
-    end)
 end
 
 destroyAllExistingGuis()
 
--- Grouped State & Config Tables (Prevents Luau 200-local limit error)
+-- Grouped State & Config Tables
 local State = {
     isTerminated = false,
     hoverEnabled = false,
     flyEnabled = false,
     swimEnabled = false,
     seatedSwimEnabled = false,
+    walkOnWaterEnabled = false,
     seatedFlingEnabled = false,
     spinEnabled = false,
     noclipEnabled = false,
@@ -143,8 +126,6 @@ local State = {
     targetNearestEnabled = false,
     movementPredictorEnabled = false,
     autoIgnoreAnchoredEnabled = true,
-    spinSpeed = 999999999999999,
-    orbitSpeed = 999999999999999,
     FlingActive = false,
     flingRunToken = 0,
     currentDirIndex = 1,
@@ -152,6 +133,7 @@ local State = {
     joystickDragging = false,
     orbitAngleCounter = 0,
     cachedWaterCount = 0,
+    cachedSelfWeightKg = 0,
     -- Settings States
     antiAfkEnabled = false,
     autoRejoinEnabled = true,
@@ -243,6 +225,8 @@ local UpdateFlingStatus
 local stopFly
 local startSeatedSwim
 local stopSeatedSwim
+local startWalkOnWater
+local stopWalkOnWater
 local startSpin
 local stopSpin
 local startCameraZoom
@@ -271,7 +255,7 @@ local function createButton(parent, text, color, order, initialBgColor)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(1, 0, 0, 40)
     btn.BackgroundColor3 = initialBgColor or Color3.fromRGB(22, 16, 20)
-    btn.BackgroundTransparency = 0.3
+    btn.BackgroundTransparency = 0.25
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamSemibold
     btn.TextColor3 = color
@@ -287,7 +271,7 @@ local function createNumberInputRow(parent, labelText, defaultValue, accentColor
     local container = Instance.new("Frame")
     container.Size = UDim2.new(1, 0, 0, 40)
     container.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
-    container.BackgroundTransparency = 0.3
+    container.BackgroundTransparency = 0.25
     container.BorderSizePixel = 0
     container.LayoutOrder = order
     container.Parent = parent
@@ -324,17 +308,17 @@ end
 local screenGui = Instance.new("ScreenGui")
 screenGui.Name = "RayfieldStyleGui"
 screenGui.ResetOnSpawn = false
+screenGui.Enabled = true
 pcall(function() screenGui.IgnoreGuiInset = true end)
-pcall(function() screenGui.DisplayOrder = 999999 end)
+pcall(function() screenGui.DisplayOrder = 2147483647 end)
 screenGui.Parent = guiParent
 
--- Moved ~1cm (~38px) down from top edge
 local openButton = Instance.new("TextButton")
 openButton.Name = "OpenButton"
 openButton.Size = UDim2.new(0, 230, 0, 40)
 openButton.Position = UDim2.new(0.5, -115, 0, 39)
 openButton.BackgroundColor3 = Color3.fromRGB(14, 10, 12)
-openButton.BackgroundTransparency = 0.2
+openButton.BackgroundTransparency = 0.15
 openButton.BorderSizePixel = 0
 openButton.Font = Enum.Font.GothamBold
 openButton.Text = "Indulge The Entropy"
@@ -346,13 +330,12 @@ openButton.Parent = screenGui
 addCorner(openButton, 6)
 addStroke(openButton, 1.5, Color3.fromRGB(150, 15, 15), 0.3)
 
--- Centered on screen (600x670)
 local mainWindow = Instance.new("Frame")
 mainWindow.Name = "MainWindow"
 mainWindow.Size = UDim2.new(0, 600, 0, 670)
 mainWindow.Position = UDim2.new(0.5, -300, 0.5, -335)
 mainWindow.BackgroundColor3 = Color3.fromRGB(12, 10, 13)
-mainWindow.BackgroundTransparency = 0.2
+mainWindow.BackgroundTransparency = 0.15
 mainWindow.BorderSizePixel = 0
 mainWindow.Parent = screenGui
 addCorner(mainWindow, 6)
@@ -362,7 +345,7 @@ local topBar = Instance.new("Frame")
 topBar.Name = "TopBar"
 topBar.Size = UDim2.new(1, 0, 0, 35)
 topBar.BackgroundColor3 = Color3.fromRGB(22, 15, 20)
-topBar.BackgroundTransparency = 0.2
+topBar.BackgroundTransparency = 0.15
 topBar.BorderSizePixel = 0
 topBar.Parent = mainWindow
 addCorner(topBar, 6)
@@ -419,7 +402,7 @@ categoryBar.Name = "CategoryBar"
 categoryBar.Size = UDim2.new(1, -20, 0, 35)
 categoryBar.Position = UDim2.new(0, 10, 0, 42)
 categoryBar.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
-categoryBar.BackgroundTransparency = 0.3
+categoryBar.BackgroundTransparency = 0.25
 categoryBar.BorderSizePixel = 0
 categoryBar.Parent = mainWindow
 addCorner(categoryBar, 4)
@@ -435,7 +418,7 @@ local function createTabButton(name, order)
     local btn = Instance.new("TextButton")
     btn.Size = UDim2.new(0.32, 0, 1, 0)
     btn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
-    btn.BackgroundTransparency = 0.4
+    btn.BackgroundTransparency = 0.35
     btn.BorderSizePixel = 0
     btn.Font = Enum.Font.GothamBold
     btn.Text = name
@@ -472,7 +455,7 @@ end
 
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 1080)
-local playerContainer = createTabContainer("PlayerContainer", 1200)
+local playerContainer = createTabContainer("PlayerContainer", 1220)
 local settingsContainer = createTabContainer("SettingsContainer", 680)
 
 espContainer.Visible = true
@@ -553,10 +536,15 @@ local function terminateScript()
         pcall(stopSettingsUtilities)
     end
 
+    if stopWalkOnWater then
+        pcall(stopWalkOnWater)
+    end
+
     State.hoverEnabled = false
     State.flyEnabled = false
     State.swimEnabled = false
     State.seatedSwimEnabled = false
+    State.walkOnWaterEnabled = false
     State.spinEnabled = false
     State.noclipEnabled = false
     State.infJumpEnabled = false
@@ -706,7 +694,7 @@ local dirDropdownFrame = Instance.new("Frame")
 dirDropdownFrame.Name = "DirDropdownFrame"
 dirDropdownFrame.Size = UDim2.new(1, 0, 0, 82)
 dirDropdownFrame.BackgroundColor3 = Color3.fromRGB(18, 12, 15)
-dirDropdownFrame.BackgroundTransparency = 0.1
+dirDropdownFrame.BackgroundTransparency = 0.05
 dirDropdownFrame.BorderSizePixel = 0
 dirDropdownFrame.Visible = false
 dirDropdownFrame.ZIndex = 15
@@ -723,7 +711,7 @@ for index, modeName in ipairs(FlingDirections) do
     local optBtn = Instance.new("TextButton")
     optBtn.Size = UDim2.new(1, 0, 0, 24)
     optBtn.BackgroundColor3 = Color3.fromRGB(25, 16, 20)
-    optBtn.BackgroundTransparency = 0.3
+    optBtn.BackgroundTransparency = 0.2
     optBtn.BorderSizePixel = 0
     optBtn.Font = Enum.Font.GothamSemibold
     optBtn.Text = "   ➔ " .. modeName
@@ -765,7 +753,7 @@ end)
 local searchContainer = Instance.new("Frame")
 searchContainer.Size = UDim2.new(1, 0, 0, 35)
 searchContainer.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
-searchContainer.BackgroundTransparency = 0.3
+searchContainer.BackgroundTransparency = 0.25
 searchContainer.BorderSizePixel = 0
 searchContainer.LayoutOrder = 7
 searchContainer.Parent = combatContainer
@@ -802,7 +790,7 @@ local function buildTargetColumn(order, titleText, titleColor, strokeColor)
     local wrapper = Instance.new("Frame")
     wrapper.Size = UDim2.new(0.49, 0, 1, 0)
     wrapper.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
-    wrapper.BackgroundTransparency = 0.3
+    wrapper.BackgroundTransparency = 0.25
     wrapper.BorderSizePixel = 0
     wrapper.LayoutOrder = order
     wrapper.Parent = dualListContainer
@@ -875,7 +863,7 @@ flingActionContainer.Parent = combatContainer
 local startFlingBtn = Instance.new("TextButton")
 startFlingBtn.Size = UDim2.new(0.48, 0, 1, 0)
 startFlingBtn.BackgroundColor3 = Color3.fromRGB(100, 15, 20)
-startFlingBtn.BackgroundTransparency = 0.2
+startFlingBtn.BackgroundTransparency = 0.15
 startFlingBtn.BorderSizePixel = 0
 startFlingBtn.Font = Enum.Font.GothamBold
 startFlingBtn.Text = "UNLEASH ENTROPY"
@@ -888,7 +876,7 @@ local stopFlingBtn = Instance.new("TextButton")
 stopFlingBtn.Size = UDim2.new(0.48, 0, 1, 0)
 stopFlingBtn.Position = UDim2.new(0.52, 0, 0, 0)
 stopFlingBtn.BackgroundColor3 = Color3.fromRGB(50, 10, 15)
-stopFlingBtn.BackgroundTransparency = 0.2
+stopFlingBtn.BackgroundTransparency = 0.15
 stopFlingBtn.BorderSizePixel = 0
 stopFlingBtn.Font = Enum.Font.GothamBold
 stopFlingBtn.Text = "HALT RITUAL"
@@ -911,7 +899,7 @@ do
     statsPanel.Name = "StatsPanel"
     statsPanel.Size = UDim2.new(1, 0, 0, 310)
     statsPanel.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
-    statsPanel.BackgroundTransparency = 0.3
+    statsPanel.BackgroundTransparency = 0.25
     statsPanel.BorderSizePixel = 0
     statsPanel.LayoutOrder = 1
     statsPanel.Parent = playerContainer
@@ -932,7 +920,7 @@ do
     statsTableContainer.Size = UDim2.new(0.62, -5, 1, -38)
     statsTableContainer.Position = UDim2.new(0, 6, 0, 32)
     statsTableContainer.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-    statsTableContainer.BackgroundTransparency = 0.4
+    statsTableContainer.BackgroundTransparency = 0.35
     statsTableContainer.BorderSizePixel = 0
     statsTableContainer.Parent = statsPanel
     addCorner(statsTableContainer, 4)
@@ -979,7 +967,7 @@ do
     avatarViewport.Size = UDim2.new(0.36, -5, 1, -38)
     avatarViewport.Position = UDim2.new(0.63, 0, 0, 32)
     avatarViewport.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-    avatarViewport.BackgroundTransparency = 0.4
+    avatarViewport.BackgroundTransparency = 0.35
     avatarViewport.BorderSizePixel = 0
     avatarViewport.Parent = statsPanel
     addCorner(avatarViewport, 4)
@@ -989,6 +977,18 @@ do
     avCam.Parent = avatarViewport
 end
 
+local function getModelMassKg(model)
+    local totalMass = 0
+    pcall(function()
+        for _, part in ipairs(model:GetDescendants()) do
+            if part:IsA("BasePart") then
+                totalMass = totalMass + part:GetMass()
+            end
+        end
+    end)
+    return math.floor(totalMass)
+end
+
 local clonedAvatarModel = nil
 local function updateAvatarPreview()
     if State.isTerminated then return end
@@ -996,6 +996,7 @@ local function updateAvatarPreview()
         if clonedAvatarModel then clonedAvatarModel:Destroy() clonedAvatarModel = nil end
         local char = LocalPlayer.Character
         if char then
+            State.cachedSelfWeightKg = getModelMassKg(char)
             char.Archivable = true
             clonedAvatarModel = char:Clone()
             for _, obj in ipairs(clonedAvatarModel:GetDescendants()) do
@@ -1019,13 +1020,68 @@ task.defer(updateAvatarPreview)
 
 local hoverButton = createButton(playerContainer, "Suspension Over The Void: OFF", Color3.fromRGB(230, 140, 140), 2)
 local cameraZoomButton = createButton(playerContainer, "Astral Projection View: ON", Color3.fromRGB(220, 160, 160), 3, Color3.fromRGB(90, 20, 25))
-local flyButton = createButton(playerContainer, "Winged Appendage: OFF", Color3.fromRGB(240, 120, 120), 4)
-local speedBox = createNumberInputRow(playerContainer, "Absolute Air-Control:", 150, Color3.fromRGB(240, 120, 120), 5)
-local infJumpButton = createButton(playerContainer, "Steps To Heaven: OFF", Color3.fromRGB(230, 130, 130), 6)
-local noclipButton = createButton(playerContainer, "Ethereal Phase: OFF", Color3.fromRGB(210, 150, 150), 7)
-local joystickButton = createButton(playerContainer, "Ritualistic Pad: OFF", Color3.fromRGB(230, 140, 140), 8)
-local swimButton = createButton(playerContainer, "The Trench-Walker's Apotheosis: OFF", Color3.fromRGB(220, 130, 130), 9)
-local seatedSwimButton = createButton(playerContainer, "Submerged Seated Glide: OFF", Color3.fromRGB(220, 140, 140), 10)
+
+-- Combined Fly & FlySpeed Row:
+-- Winged Appendage label, fly speed TextBox, and ON/OFF button aligned on the same horizontal axis
+-- with equal spacing between them, matching text form/color, and no outline/border on flyButton.
+local flyRow = Instance.new("Frame")
+flyRow.Name = "FlyControlRow"
+flyRow.Size = UDim2.new(1, 0, 0, 40)
+flyRow.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+flyRow.BackgroundTransparency = 0.25
+flyRow.BorderSizePixel = 0
+flyRow.LayoutOrder = 4
+flyRow.Parent = playerContainer
+addCorner(flyRow, 4)
+
+local flyLabel = Instance.new("TextLabel")
+flyLabel.Size = UDim2.new(1 / 3, -13, 0, 28)
+flyLabel.Position = UDim2.new(0, 10, 0.5, -14)
+flyLabel.BackgroundTransparency = 1
+flyLabel.Font = Enum.Font.GothamSemibold
+flyLabel.Text = "Winged Appendage"
+flyLabel.TextColor3 = Color3.fromRGB(240, 120, 120)
+flyLabel.TextSize = 13
+flyLabel.TextXAlignment = Enum.TextXAlignment.Center
+flyLabel.TextYAlignment = Enum.TextYAlignment.Center
+flyLabel.Parent = flyRow
+
+local speedBox = Instance.new("TextBox")
+speedBox.Size = UDim2.new(1 / 3, -13, 0, 28)
+speedBox.Position = UDim2.new(1 / 3, 7, 0.5, -14)
+speedBox.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
+speedBox.BorderSizePixel = 0
+speedBox.Font = Enum.Font.GothamBold
+speedBox.Text = tostring(State.flySpeed)
+speedBox.TextColor3 = Color3.fromRGB(240, 120, 120)
+speedBox.TextSize = 13
+speedBox.TextXAlignment = Enum.TextXAlignment.Center
+speedBox.TextYAlignment = Enum.TextYAlignment.Center
+speedBox.ClearTextOnFocus = false
+speedBox.Parent = flyRow
+addCorner(speedBox, 4)
+
+local flyButton = Instance.new("TextButton")
+flyButton.Size = UDim2.new(1 / 3, -13, 0, 28)
+flyButton.Position = UDim2.new(2 / 3, 3, 0.5, -14)
+flyButton.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
+flyButton.BackgroundTransparency = 0.25
+flyButton.BorderSizePixel = 0
+flyButton.Font = Enum.Font.GothamSemibold
+flyButton.Text = "OFF"
+flyButton.TextColor3 = Color3.fromRGB(240, 120, 120)
+flyButton.TextSize = 13
+flyButton.TextXAlignment = Enum.TextXAlignment.Center
+flyButton.TextYAlignment = Enum.TextYAlignment.Center
+flyButton.Parent = flyRow
+addCorner(flyButton, 4)
+
+local infJumpButton = createButton(playerContainer, "Steps To Heaven: OFF", Color3.fromRGB(230, 130, 130), 5)
+local noclipButton = createButton(playerContainer, "Ethereal Phase: OFF", Color3.fromRGB(210, 150, 150), 6)
+local joystickButton = createButton(playerContainer, "Ritualistic Pad: OFF", Color3.fromRGB(230, 140, 140), 7)
+local swimButton = createButton(playerContainer, "The Trench-Walker's Apotheosis: OFF", Color3.fromRGB(220, 130, 130), 8)
+local seatedSwimButton = createButton(playerContainer, "Submerged Seated Glide: OFF", Color3.fromRGB(220, 140, 140), 9)
+local walkOnWaterButton = createButton(playerContainer, "Walk on Water: OFF", Color3.fromRGB(220, 150, 150), 10)
 local spinButton = createButton(playerContainer, "Vortex Spin: OFF", Color3.fromRGB(230, 140, 140), 11)
 local spinSpeedBox = createNumberInputRow(playerContainer, "Vortex Velocity:", 0, Color3.fromRGB(230, 140, 140), 12)
 
@@ -1074,7 +1130,10 @@ local function switchTab(activeTab, activeBtn)
 end
 
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
-combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, combatTabBtn) end)
+combatTabBtn.MouseButton1Click:Connect(function()
+    switchTab(combatContainer, combatTabBtn)
+    if RefreshTargetLists then RefreshTargetLists() end
+end)
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
 gearButton.MouseButton1Click:Connect(function() switchTab(settingsContainer, nil) end)
 
@@ -1148,7 +1207,7 @@ local function purgeAdsOnce()
 end
 
 local function startAdPurge()
-    purgeAdsOnce()
+    task.defer(purgeAdsOnce)
     if Connections.adPurge then Connections.adPurge:Disconnect() end
     Connections.adPurge = trackConnection(Workspace.DescendantAdded:Connect(function(obj)
         if State.isTerminated or not State.removeAdsEnabled then return end
@@ -1162,49 +1221,47 @@ local function stopAdPurge()
     if Connections.adPurge then Connections.adPurge:Disconnect() Connections.adPurge = nil end
 end
 
+local function neutralizeAndRemoveBlur(obj)
+    if obj and obj:IsA("BlurEffect") then
+        pcall(function()
+            obj.Size = 0
+            obj.Enabled = false
+            obj:Destroy()
+        end)
+    end
+end
+
 local function purgeBlurInRoot(root)
     if not root then return end
     pcall(function()
-        for _, obj in ipairs(root:GetDescendants()) do
+        for _, obj in ipairs(root:GetChildren()) do
             if obj:IsA("BlurEffect") then
-                obj.Enabled = false
-                obj:Destroy()
+                neutralizeAndRemoveBlur(obj)
             end
         end
     end)
 end
 
-local function purgeBlurOnce()
-    purgeBlurInRoot(Lighting)
-    purgeBlurInRoot(Workspace)
-    purgeBlurInRoot(getActiveCamera())
-    purgeBlurInRoot(CoreGui)
-end
-
 local function hookBlurRoot(root, key)
     if not root then return end
     if Connections[key] then Connections[key]:Disconnect() end
-    Connections[key] = trackConnection(root.DescendantAdded:Connect(function(obj)
+    Connections[key] = trackConnection(root.ChildAdded:Connect(function(obj)
         if State.isTerminated or not State.removeBlurEnabled then return end
         if obj:IsA("BlurEffect") then
-            pcall(function()
-                obj.Enabled = false
-                obj:Destroy()
-            end)
+            neutralizeAndRemoveBlur(obj)
         end
     end))
 end
 
 local function startBlurPurge()
-    purgeBlurOnce()
+    purgeBlurInRoot(Lighting)
+    purgeBlurInRoot(getActiveCamera())
     hookBlurRoot(Lighting, "blurPurgeLighting")
-    hookBlurRoot(Workspace, "blurPurgeWorkspace")
     hookBlurRoot(getActiveCamera(), "blurPurgeCamera")
-    hookBlurRoot(CoreGui, "blurPurgeCoreGui")
 end
 
 local function stopBlurPurge()
-    for _, key in ipairs({ "blurPurgeLighting", "blurPurgeWorkspace", "blurPurgeCamera", "blurPurgeCoreGui" }) do
+    for _, key in ipairs({ "blurPurgeLighting", "blurPurgeCamera" }) do
         if Connections[key] then
             Connections[key]:Disconnect()
             Connections[key] = nil
@@ -1252,30 +1309,9 @@ removeBlurBtn.MouseButton1Click:Connect(function()
     if State.removeBlurEnabled then startBlurPurge() else stopBlurPurge() end
 end)
 
-if State.autoRejoinEnabled then
-    startAutoRejoin()
-end
-
-if State.removeAdsEnabled then
-    startAdPurge()
-end
-
-if State.removeBlurEnabled then
-    startBlurPurge()
-end
-
--- Accurate weight calculation using part:GetMass()
-local function getModelMassKg(model)
-    local totalMass = 0
-    pcall(function()
-        for _, part in ipairs(model:GetDescendants()) do
-            if part:IsA("BasePart") then
-                totalMass = totalMass + part:GetMass()
-            end
-        end
-    end)
-    return math.floor(totalMass)
-end
+if State.autoRejoinEnabled then startAutoRejoin() end
+if State.removeAdsEnabled then startAdPurge() end
+if State.removeBlurEnabled then startBlurPurge() end
 
 local function getTargetSizeProfile(model, fallbackPart)
     local centerPos = fallbackPart and fallbackPart.Position or Vector3.zero
@@ -1350,7 +1386,6 @@ local function isTargetAnchored(charModel, humanoid)
     return false
 end
 
--- Helper specifically for ESP anchoring filter
 local function isModelAnchoredForESP(model, humanoid)
     if not State.espIgnoreAnchoredEnabled then return false end
     local rootPart = getCharacterRoot(model)
@@ -1365,44 +1400,50 @@ local function isModelAnchoredForESP(model, humanoid)
     return false
 end
 
--- Central Render Loop
+-- Throttled Render Loop (Metrics updated every 0.25s)
 local raycastParams = RaycastParams.new()
 raycastParams.FilterType = Enum.RaycastFilterType.Exclude
+local lastStatsUpdate = 0
 
 trackConnection(RunService.RenderStepped:Connect(function(dt)
     if State.isTerminated then return end
-    local fps = dt > 0 and math.floor(1 / dt) or 60
-    topBarFpsLabel.Text = "FPS: " .. fps
-    topBarFpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(255, 100, 100) or (fps >= 30 and Color3.fromRGB(255, 180, 100) or Color3.fromRGB(255, 50, 50))
+    local now = tick()
 
-    pcall(function()
-        local char = LocalPlayer.Character
-        local hum = char and char:FindFirstChildOfClass("Humanoid")
-        local root = getCharacterRoot(char)
+    if (now - lastStatsUpdate) >= 0.25 then
+        lastStatsUpdate = now
+        local fps = dt > 0 and math.floor(1 / dt) or 60
+        topBarFpsLabel.Text = "FPS: " .. fps
+        topBarFpsLabel.TextColor3 = fps >= 50 and Color3.fromRGB(255, 100, 100) or (fps >= 30 and Color3.fromRGB(255, 180, 100) or Color3.fromRGB(255, 50, 50))
 
-        if statLabels["Name"] then
-            statLabels["Name"].Text = LocalPlayer.Name
-            statLabels["Health"].Text = hum and string.format("%d / %d", math.floor(hum.Health), math.floor(hum.MaxHealth)) or "N/A"
-            local vel = root and root.AssemblyLinearVelocity or Vector3.new()
-            statLabels["Speed (Studs/s)"].Text = string.format("%.1f studs/s", math.sqrt(vel.X * vel.X + vel.Z * vel.Z))
-            statLabels["WalkSpeed"].Text = hum and tostring(math.floor(hum.WalkSpeed)) or "N/A"
-            local jumpVal = 0
-            if hum then
-                local ok, val = pcall(function() return hum.UseJumpPower and hum.JumpPower or hum.JumpHeight end)
-                jumpVal = ok and (val or 0) or (hum.JumpPower or 0)
-            end
-            statLabels["JumpHeight"].Text = string.format("%.1f", jumpVal)
-            local stateName = "Unknown"
-            if hum then
-                pcall(function() stateName = hum:GetState().Name end)
-            end
-            statLabels["Status"].Text = stateName
-            statLabels["Weight (kg)"].Text = string.format("%d kg", char and getModelMassKg(char) or 0)
-            statLabels["Gravity"].Text = string.format("%.1f", Workspace.Gravity)
-            local pos = root and root.Position or Vector3.new()
-            statLabels["Coordinates"].Text = string.format("%d, %d, %d", math.round(pos.X), math.round(pos.Y), math.round(pos.Z))
+        if mainWindow.Visible and playerContainer.Visible and statLabels["Name"] then
+            pcall(function()
+                local char = LocalPlayer.Character
+                local hum = char and char:FindFirstChildOfClass("Humanoid")
+                local root = getCharacterRoot(char)
+
+                statLabels["Name"].Text = LocalPlayer.Name
+                statLabels["Health"].Text = hum and string.format("%d / %d", math.floor(hum.Health), math.floor(hum.MaxHealth)) or "N/A"
+                local vel = root and root.AssemblyLinearVelocity or Vector3.new()
+                statLabels["Speed (Studs/s)"].Text = string.format("%.1f studs/s", math.sqrt(vel.X * vel.X + vel.Z * vel.Z))
+                statLabels["WalkSpeed"].Text = hum and tostring(math.floor(hum.WalkSpeed)) or "N/A"
+                local jumpVal = 0
+                if hum then
+                    local ok, val = pcall(function() return hum.UseJumpPower and hum.JumpPower or hum.JumpHeight end)
+                    jumpVal = ok and (val or 0) or (hum.JumpPower or 0)
+                end
+                statLabels["JumpHeight"].Text = string.format("%.1f", jumpVal)
+                local stateName = "Unknown"
+                if hum then
+                    pcall(function() stateName = hum:GetState().Name end)
+                end
+                statLabels["Status"].Text = stateName
+                statLabels["Weight (kg)"].Text = string.format("%d kg", State.cachedSelfWeightKg)
+                statLabels["Gravity"].Text = string.format("%.1f", Workspace.Gravity)
+                local pos = root and root.Position or Vector3.new()
+                statLabels["Coordinates"].Text = string.format("%d, %d, %d", math.round(pos.X), math.round(pos.Y), math.round(pos.Z))
+            end)
         end
-    end)
+    end
 
     if State.hoverEnabled and not State.flyEnabled and not State.FlingActive then
         pcall(function()
@@ -1488,7 +1529,8 @@ local function createESPForModel(model)
         NameLabel = nameLabel,
         HealthBarBg = healthBarBg,
         HealthBarFill = healthBarFill,
-        Highlight = highlight
+        Highlight = highlight,
+        CachedMassKg = getModelMassKg(model)
     }
 end
 
@@ -1501,18 +1543,47 @@ local function removeESPForModel(model)
     end
 end
 
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    if obj:IsA("Humanoid") and obj.Parent then createESPForModel(obj.Parent) end
+local function isWaterPart(obj)
+    if not obj:IsA("BasePart") then return false end
+    if obj.Material == Enum.Material.Water then return true end
+    local lowerName = obj.Name:lower()
+    return string.find(lowerName, "water", 1, true) ~= nil
+        or string.find(lowerName, "fluid", 1, true) ~= nil
+        or string.find(lowerName, "ocean", 1, true) ~= nil
+        or string.find(lowerName, "sea", 1, true) ~= nil
 end
+
+task.spawn(function()
+    local descendants = Workspace:GetDescendants()
+    for i, obj in ipairs(descendants) do
+        if State.isTerminated then return end
+        if obj:IsA("Humanoid") and obj.Parent then
+            createESPForModel(obj.Parent)
+        elseif isWaterPart(obj) then
+            State.cachedWaterCount = State.cachedWaterCount + 1
+        end
+        if i % 500 == 0 then
+            task.wait()
+        end
+    end
+end)
 
 trackConnection(Workspace.DescendantAdded:Connect(function(descendant)
     if State.isTerminated then return end
-    if descendant:IsA("Humanoid") and descendant.Parent then createESPForModel(descendant.Parent) end
+    if descendant:IsA("Humanoid") and descendant.Parent then
+        createESPForModel(descendant.Parent)
+    elseif isWaterPart(descendant) then
+        State.cachedWaterCount = State.cachedWaterCount + 1
+    end
 end))
 
 trackConnection(Workspace.DescendantRemoving:Connect(function(descendant)
     if State.isTerminated then return end
-    if descendant:IsA("Humanoid") and descendant.Parent then removeESPForModel(descendant.Parent) end
+    if descendant:IsA("Humanoid") and descendant.Parent then
+        removeESPForModel(descendant.Parent)
+    elseif isWaterPart(descendant) then
+        State.cachedWaterCount = math.max(0, State.cachedWaterCount - 1)
+    end
 end))
 
 local cornersBuffer = table.create(8)
@@ -1600,7 +1671,7 @@ trackConnection(RunService.RenderStepped:Connect(function()
                 lines[4].Visible = true
 
                 data.NameLabel.Position = UDim2.new(0, minX + (boxW / 2), 0, minY - 4)
-                data.NameLabel.Text = string.format("%s | HP: %d | %dkg | %dm", model.Name, math.floor(hum.Health), getModelMassKg(model), math.floor((localPos - rootPart.Position).Magnitude))
+                data.NameLabel.Text = string.format("%s | HP: %d | %dkg | %dm", model.Name, math.floor(hum.Health), data.CachedMassKg or 0, math.floor((localPos - rootPart.Position).Magnitude))
                 data.NameLabel.Visible = true
 
                 local maxHp = math.max(hum.MaxHealth, 1)
@@ -1641,20 +1712,18 @@ local function GetCategorizedTargets()
     local localRoot = getCharacterRoot(localChar)
     local localPos = localRoot and localRoot.Position or (cam and cam.CFrame.Position or Vector3.new())
 
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            local charModel = obj.Parent
-            if charModel and charModel:IsA("Model") and charModel ~= localChar then
-                if not isTargetAnchored(charModel, obj) then
-                    local rootPart = getCharacterRoot(charModel)
-                    local dist = rootPart and (localPos - rootPart.Position).Magnitude or math.huge
+    for charModel, _ in pairs(espCache) do
+        if charModel and charModel.Parent and charModel ~= localChar then
+            local hum = charModel:FindFirstChildOfClass("Humanoid")
+            if hum and hum.Health > 0 and not isTargetAnchored(charModel, hum) then
+                local rootPart = getCharacterRoot(charModel)
+                local dist = rootPart and (localPos - rootPart.Position).Magnitude or math.huge
 
-                    local targetData = { Name = charModel.Name, Model = charModel, Humanoid = obj, Distance = dist }
-                    if Players:GetPlayerFromCharacter(charModel) then
-                        table.insert(playerTargets, targetData)
-                    else
-                        table.insert(entityTargets, targetData)
-                    end
+                local targetData = { Name = charModel.Name, Model = charModel, Humanoid = hum, Distance = dist }
+                if Players:GetPlayerFromCharacter(charModel) then
+                    table.insert(playerTargets, targetData)
+                else
+                    table.insert(entityTargets, targetData)
                 end
             end
         end
@@ -1837,7 +1906,6 @@ local function GetModelMass(model)
     return math.max(getModelMassKg(model), 1)
 end
 
--- Helper to suppress swim animations while keeping Swimming physics state intact
 local function suppressSwimAnimations(humanoid)
     if not humanoid then return end
     local animator = humanoid:FindFirstChildOfClass("Animator")
@@ -2237,10 +2305,13 @@ stopFlingBtn.MouseButton1Click:Connect(function()
     notify("Seal", "Power sealed.", 2)
 end)
 
+-- Fast 0.5s target list refresh while Ritual tab is open
 task.spawn(function()
     while screenGui.Parent and not State.isTerminated do
-        if not State.FlingActive and combatContainer.Visible then RefreshTargetLists() end
-        task.wait(3)
+        if not State.FlingActive and mainWindow.Visible and combatContainer.Visible then
+            RefreshTargetLists()
+        end
+        task.wait(0.5)
     end
 end)
 
@@ -2258,6 +2329,151 @@ spinSpeedBox.FocusLost:Connect(function()
 end)
 
 -- Movement & Utility Controls
+local function ensureWaterFloorPart()
+    if Physics.waterFloorPart and Physics.waterFloorPart.Parent then
+        return Physics.waterFloorPart
+    end
+    if Physics.waterFloorPart then
+        pcall(function() Physics.waterFloorPart:Destroy() end)
+    end
+    local part = Instance.new("Part")
+    part.Name = "CultWaterFloor"
+    part.Size = Vector3.new(28, 1, 28)
+    part.Anchored = true
+    part.CanCollide = true
+    part.Transparency = 1
+    part.Material = Enum.Material.SmoothPlastic
+    part.TopSurface = Enum.SurfaceType.Smooth
+    part.BottomSurface = Enum.SurfaceType.Smooth
+    part.Parent = Workspace
+    Physics.waterFloorPart = part
+    return part
+end
+
+local function destroyWaterFloorPart()
+    if Physics.waterFloorPart then
+        pcall(function() Physics.waterFloorPart:Destroy() end)
+        Physics.waterFloorPart = nil
+    end
+end
+
+local function getWaterSurfaceYAt(pos, char)
+    local surfaceY = nil
+
+    -- Check water parts first (including water/fluid/ocean/sea parts)
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = char and {char} or {}
+
+    local downOrigin = pos + Vector3.new(0, 12, 0)
+    local downRay = Workspace:Raycast(downOrigin, Vector3.new(0, -40, 0), params)
+    if downRay and downRay.Instance and isWaterPart(downRay.Instance) then
+        surfaceY = downRay.Position.Y
+    end
+
+    -- Check Terrain water around character feet/root using ReadVoxels
+    local terrain = Workspace:FindFirstChildOfClass("Terrain")
+    if terrain then
+        local ok, materials = pcall(function()
+            local minCorner = Vector3.new(
+                math.floor((pos.X - 3) / 4) * 4,
+                math.floor((pos.Y - 8) / 4) * 4,
+                math.floor((pos.Z - 3) / 4) * 4
+            )
+            local maxCorner = Vector3.new(
+                math.floor((pos.X + 3) / 4) * 4,
+                math.floor((pos.Y + 4) / 4) * 4,
+                math.floor((pos.Z + 3) / 4) * 4
+            )
+            return terrain:ReadVoxels(Region3.new(minCorner, maxCorner), 4)
+        end)
+
+        if ok and materials then
+            local sizeX, sizeY, sizeZ = materials.Size.X, materials.Size.Y, materials.Size.Z
+            local minX = math.floor((pos.X - 3) / 4) * 4
+            local minY = math.floor((pos.Y - 8) / 4) * 4
+            local minZ = math.floor((pos.Z - 3) / 4) * 4
+
+            for x = 1, sizeX do
+                for y = 1, sizeY do
+                    for z = 1, sizeZ do
+                        if materials[x][y][z] == Enum.Material.Water then
+                            local voxelTopY = minY + (y * 4)
+                            if not surfaceY or voxelTopY > surfaceY then
+                                surfaceY = voxelTopY
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return surfaceY
+end
+
+startWalkOnWater = function()
+    if Connections.walkOnWater then Connections.walkOnWater:Disconnect() end
+    ensureWaterFloorPart()
+
+    Connections.walkOnWater = trackConnection(RunService.Heartbeat:Connect(function()
+        if State.isTerminated or not State.walkOnWaterEnabled then return end
+        local floorPart = ensureWaterFloorPart()
+        if State.FlingActive or State.flyEnabled or State.noclipEnabled then
+            floorPart.CanCollide = false
+            return
+        end
+
+        local char = LocalPlayer.Character
+        local hum = char and char:FindFirstChildOfClass("Humanoid")
+        local root = getCharacterRoot(char)
+        if not char or not hum or not root then
+            floorPart.CanCollide = false
+            return
+        end
+
+        local surfaceY = getWaterSurfaceYAt(root.Position, char)
+        if surfaceY then
+            local hipOffset = (hum.HipHeight > 0 and hum.HipHeight or 2) + 1.5
+            local targetFloorY = surfaceY - 0.5
+            local desiredRootY = targetFloorY + 0.5 + hipOffset
+
+            -- Allow jumping or stepping up onto the water surface smoothly
+            if root.Position.Y <= desiredRootY + 2.25 then
+                floorPart.CanCollide = true
+                floorPart.CFrame = CFrame.new(root.Position.X, targetFloorY, root.Position.Z)
+
+                if root.Position.Y < desiredRootY - 0.15 and root.AssemblyLinearVelocity.Y < 0 then
+                    root.CFrame = CFrame.new(root.Position.X, desiredRootY, root.Position.Z) * (root.CFrame - root.CFrame.Position)
+                    root.AssemblyLinearVelocity = Vector3.new(root.AssemblyLinearVelocity.X, 0, root.AssemblyLinearVelocity.Z)
+                end
+
+                if hum:GetState() == Enum.HumanoidStateType.Swimming then
+                    pcall(function()
+                        hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+                        hum:ChangeState(Enum.HumanoidStateType.Running)
+                    end)
+                end
+            else
+                floorPart.CanCollide = false
+            end
+        else
+            floorPart.CanCollide = false
+        end
+    end))
+end
+
+stopWalkOnWater = function()
+    if Connections.walkOnWater then Connections.walkOnWater:Disconnect() Connections.walkOnWater = nil end
+    destroyWaterFloorPart()
+    local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
+    if hum and not State.swimEnabled then
+        pcall(function()
+            hum:SetStateEnabled(Enum.HumanoidStateType.Swimming, false)
+        end)
+    end
+end
+
 local function startFly()
     local char = LocalPlayer.Character
     local hum = char and char:FindFirstChildOfClass("Humanoid")
@@ -2328,7 +2544,6 @@ stopFly = function()
     if Physics.bv then pcall(function() Physics.bv:Destroy() end) Physics.bv = nil end
 end
 
--- Unconstrained Vortex Spin Mechanics
 startSpin = function()
     if Connections.spin then Connections.spin:Disconnect() end
     Connections.spin = trackConnection(RunService.RenderStepped:Connect(function(dt)
@@ -2345,7 +2560,6 @@ stopSpin = function()
     if Connections.spin then Connections.spin:Disconnect() Connections.spin = nil end
 end
 
--- Seated Glide with Enforced Seated Status & Trench-Walker 3D Physics
 startSeatedSwim = function()
     if Connections.seatedSwim then Connections.seatedSwim:Disconnect() end
     Connections.seatedSwim = trackConnection(RunService.Heartbeat:Connect(function()
@@ -2407,30 +2621,6 @@ stopSeatedSwim = function()
     if Connections.seatedSwim then Connections.seatedSwim:Disconnect() Connections.seatedSwim = nil end
     if Physics.seatedSwimBv then pcall(function() Physics.seatedSwimBv:Destroy() end) Physics.seatedSwimBv = nil end
 end
-
-local function isWaterPart(obj)
-    if not obj:IsA("BasePart") then return false end
-    if obj.Material == Enum.Material.Water then return true end
-    local lowerName = obj.Name:lower()
-    return string.find(lowerName, "water", 1, true) ~= nil
-        or string.find(lowerName, "fluid", 1, true) ~= nil
-        or string.find(lowerName, "ocean", 1, true) ~= nil
-        or string.find(lowerName, "sea", 1, true) ~= nil
-end
-
-for _, obj in ipairs(Workspace:GetDescendants()) do
-    if isWaterPart(obj) then State.cachedWaterCount = State.cachedWaterCount + 1 end
-end
-
-trackConnection(Workspace.DescendantAdded:Connect(function(obj)
-    if State.isTerminated then return end
-    if isWaterPart(obj) then State.cachedWaterCount = State.cachedWaterCount + 1 end
-end))
-
-trackConnection(Workspace.DescendantRemoving:Connect(function(obj)
-    if State.isTerminated then return end
-    if isWaterPart(obj) then State.cachedWaterCount = math.max(0, State.cachedWaterCount - 1) end
-end))
 
 local function startSwim()
     local char = LocalPlayer.Character
@@ -2638,9 +2828,7 @@ stopCameraZoom = function()
     end)
 end
 
-if State.cameraZoomEnabled then
-    startCameraZoom()
-end
+if State.cameraZoomEnabled then startCameraZoom() end
 
 local function startPausedScreenRemoval()
     if Connections.pausedScreen then Connections.pausedScreen:Disconnect() end
@@ -2803,7 +2991,8 @@ end)
 
 flyButton.MouseButton1Click:Connect(function()
     State.flyEnabled = not State.flyEnabled
-    flyButton.Text = State.flyEnabled and "Winged Appendage: ON" or "Winged Appendage: OFF"
+    flyButton.Text = State.flyEnabled and "ON" or "OFF"
+    flyButton.TextColor3 = Color3.fromRGB(240, 120, 120)
     flyButton.BackgroundColor3 = State.flyEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
     if State.flyEnabled then startFly() else stopFly() end
 end)
@@ -2820,6 +3009,13 @@ seatedSwimButton.MouseButton1Click:Connect(function()
     seatedSwimButton.Text = State.seatedSwimEnabled and "Submerged Seated Glide: ON" or "Submerged Seated Glide: OFF"
     seatedSwimButton.BackgroundColor3 = State.seatedSwimEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
     if State.seatedSwimEnabled then startSeatedSwim() else stopSeatedSwim() end
+end)
+
+walkOnWaterButton.MouseButton1Click:Connect(function()
+    State.walkOnWaterEnabled = not State.walkOnWaterEnabled
+    walkOnWaterButton.Text = State.walkOnWaterEnabled and "Walk on Water: ON" or "Walk on Water: OFF"
+    walkOnWaterButton.BackgroundColor3 = State.walkOnWaterEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
+    if State.walkOnWaterEnabled then startWalkOnWater() else stopWalkOnWater() end
 end)
 
 spinButton.MouseButton1Click:Connect(function()
