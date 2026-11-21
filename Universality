@@ -7,6 +7,7 @@
 -- without enclosed parentheses. Removed Codex tab and all associated features.
 -- Updated Fling size consistency for larger targets while preserving normal-target behavior.
 -- Updated Fling orientation so character RightVector points downward while keeping all other motion.
+-- Added Purge Blur Effects toggle button in Settings (enabled by default).
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -154,7 +155,8 @@ local State = {
     -- Settings States
     antiAfkEnabled = false,
     autoRejoinEnabled = true,
-    removeAdsEnabled = true
+    removeAdsEnabled = true,
+    removeBlurEnabled = true
 }
 
 local FlingConfig = {
@@ -471,7 +473,7 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 1080)
 local playerContainer = createTabContainer("PlayerContainer", 1200)
-local settingsContainer = createTabContainer("SettingsContainer", 620)
+local settingsContainer = createTabContainer("SettingsContainer", 680)
 
 espContainer.Visible = true
 espTabBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
@@ -481,8 +483,9 @@ espTabBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
 local antiAfkBtn = createButton(settingsContainer, "Anti-AFK (Idle Guard): OFF", Color3.fromRGB(230, 130, 130), 1)
 local autoRejoinBtn = createButton(settingsContainer, "Auto-Rejoin on Kick: ON", Color3.fromRGB(255, 170, 170), 2, Color3.fromRGB(90, 20, 25))
 local removeAdsBtn = createButton(settingsContainer, "Purge Ad Billboards: ON", Color3.fromRGB(255, 170, 170), 3, Color3.fromRGB(90, 20, 25))
-local debugButton = createButton(settingsContainer, "Ritual Purge & Reinitialize", Color3.fromRGB(220, 100, 100), 4)
-local resetCharButton = createButton(settingsContainer, "Sacrifice Vessel", Color3.fromRGB(240, 50, 50), 5)
+local removeBlurBtn = createButton(settingsContainer, "Purge Blur Effects: ON", Color3.fromRGB(255, 170, 170), 4, Color3.fromRGB(90, 20, 25))
+local debugButton = createButton(settingsContainer, "Ritual Purge & Reinitialize", Color3.fromRGB(220, 100, 100), 5)
+local resetCharButton = createButton(settingsContainer, "Sacrifice Vessel", Color3.fromRGB(240, 50, 50), 6)
 
 do
     local resetClickCount = 0
@@ -1159,10 +1162,61 @@ local function stopAdPurge()
     if Connections.adPurge then Connections.adPurge:Disconnect() Connections.adPurge = nil end
 end
 
+local function purgeBlurInRoot(root)
+    if not root then return end
+    pcall(function()
+        for _, obj in ipairs(root:GetDescendants()) do
+            if obj:IsA("BlurEffect") then
+                obj.Enabled = false
+                obj:Destroy()
+            end
+        end
+    end)
+end
+
+local function purgeBlurOnce()
+    purgeBlurInRoot(Lighting)
+    purgeBlurInRoot(Workspace)
+    purgeBlurInRoot(getActiveCamera())
+    purgeBlurInRoot(CoreGui)
+end
+
+local function hookBlurRoot(root, key)
+    if not root then return end
+    if Connections[key] then Connections[key]:Disconnect() end
+    Connections[key] = trackConnection(root.DescendantAdded:Connect(function(obj)
+        if State.isTerminated or not State.removeBlurEnabled then return end
+        if obj:IsA("BlurEffect") then
+            pcall(function()
+                obj.Enabled = false
+                obj:Destroy()
+            end)
+        end
+    end))
+end
+
+local function startBlurPurge()
+    purgeBlurOnce()
+    hookBlurRoot(Lighting, "blurPurgeLighting")
+    hookBlurRoot(Workspace, "blurPurgeWorkspace")
+    hookBlurRoot(getActiveCamera(), "blurPurgeCamera")
+    hookBlurRoot(CoreGui, "blurPurgeCoreGui")
+end
+
+local function stopBlurPurge()
+    for _, key in ipairs({ "blurPurgeLighting", "blurPurgeWorkspace", "blurPurgeCamera", "blurPurgeCoreGui" }) do
+        if Connections[key] then
+            Connections[key]:Disconnect()
+            Connections[key] = nil
+        end
+    end
+end
+
 stopSettingsUtilities = function()
     stopAntiAfk()
     stopAutoRejoin()
     stopAdPurge()
+    stopBlurPurge()
     applyCamNoclip(false)
     pcall(function() RunService:Set3dRenderingEnabled(true) end)
 end
@@ -1190,12 +1244,24 @@ removeAdsBtn.MouseButton1Click:Connect(function()
     if State.removeAdsEnabled then startAdPurge() else stopAdPurge() end
 end)
 
+removeBlurBtn.MouseButton1Click:Connect(function()
+    State.removeBlurEnabled = not State.removeBlurEnabled
+    removeBlurBtn.Text = State.removeBlurEnabled and "Purge Blur Effects: ON" or "Purge Blur Effects: OFF"
+    removeBlurBtn.TextColor3 = State.removeBlurEnabled and Color3.fromRGB(255, 170, 170) or Color3.fromRGB(220, 140, 140)
+    removeBlurBtn.BackgroundColor3 = State.removeBlurEnabled and Color3.fromRGB(90, 20, 25) or Color3.fromRGB(22, 16, 20)
+    if State.removeBlurEnabled then startBlurPurge() else stopBlurPurge() end
+end)
+
 if State.autoRejoinEnabled then
     startAutoRejoin()
 end
 
 if State.removeAdsEnabled then
     startAdPurge()
+end
+
+if State.removeBlurEnabled then
+    startBlurPurge()
 end
 
 -- Accurate weight calculation using part:GetMass()
