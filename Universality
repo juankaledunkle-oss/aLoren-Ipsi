@@ -4,7 +4,9 @@
 -- and Purge Ad Billboards to Settings, enabling Auto-Rejoin and Purge Ad Billboards
 -- by default with active visual styling. Removed 3D World Rendering button.
 -- Updated Goto Player into a dual-list humanoid selector (Vessels & Abominations)
--- without enclosed parentheses.
+-- without enclosed parentheses. Removed Codex tab and all associated features.
+-- Updated Fling size consistency for larger targets while preserving normal-target behavior.
+-- Updated Fling orientation so character RightVector points downward while keeping all other motion.
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
@@ -149,18 +151,10 @@ local State = {
     joystickDragging = false,
     orbitAngleCounter = 0,
     cachedWaterCount = 0,
-    -- Settings & Codex Tab States
+    -- Settings States
     antiAfkEnabled = false,
     autoRejoinEnabled = true,
-    clickTpEnabled = false,
-    removeAdsEnabled = true,
-    customWalkSpeedEnabled = false,
-    customWalkSpeedValue = 16,
-    customJumpEnabled = false,
-    customJumpValue = 50,
-    fovValue = 70,
-    volumeValue = 5,
-    fpsCapValue = 0
+    removeAdsEnabled = true
 }
 
 local FlingConfig = {
@@ -170,6 +164,8 @@ local FlingConfig = {
     MaxLungeSeconds = 1.15,
     MaxLeadSeconds = 0.45,
     OrbitRadius = 0.35,
+    MaxOrbitRadius = 8.5,
+    NormalExtentThreshold = 7.5,
     OrbitStep = 0.55
 }
 
@@ -219,8 +215,6 @@ local originalCameraSettings = {
     FieldOfView = (pcall(function() return getActiveCamera() and getActiveCamera().FieldOfView end) and getActiveCamera().FieldOfView) or 70
 }
 
-State.fovValue = math.clamp(math.round(originalCameraSettings.FieldOfView), 40, 120)
-
 local function notify(title, text, duration)
     if State.isTerminated then return end
     pcall(function()
@@ -243,7 +237,6 @@ end
 
 -- Forward Declarations
 local RefreshTargetLists
-local RefreshGotoLists
 local UpdateFlingStatus
 local stopFly
 local startSeatedSwim
@@ -253,7 +246,7 @@ local stopSpin
 local startCameraZoom
 local stopCameraZoom
 local stopFlingController
-local stopCodexUtilities
+local stopSettingsUtilities
 
 -- UI Helper Functions
 local function addCorner(parent, radius)
@@ -323,165 +316,6 @@ local function createNumberInputRow(parent, labelText, defaultValue, accentColor
     addCorner(box, 4)
 
     return box
-end
-
-local function createTextActionRow(parent, labelText, placeholderText, actionLabel, accentColor, order)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 40)
-    container.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
-    container.BackgroundTransparency = 0.3
-    container.BorderSizePixel = 0
-    container.LayoutOrder = order
-    container.Parent = parent
-    addCorner(container, 4)
-
-    local label = Instance.new("TextLabel")
-    label.Size = UDim2.new(0.34, 0, 1, 0)
-    label.Position = UDim2.new(0, 10, 0, 0)
-    label.BackgroundTransparency = 1
-    label.Font = Enum.Font.GothamSemibold
-    label.Text = labelText
-    label.TextColor3 = Color3.fromRGB(210, 190, 185)
-    label.TextSize = 12
-    label.TextXAlignment = Enum.TextXAlignment.Left
-    label.Parent = container
-
-    local box = Instance.new("TextBox")
-    box.Size = UDim2.new(0.36, 0, 0, 28)
-    box.Position = UDim2.new(0.35, 0, 0.5, -14)
-    box.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-    box.BorderSizePixel = 0
-    box.Font = Enum.Font.GothamBold
-    box.PlaceholderText = placeholderText
-    box.PlaceholderColor3 = Color3.fromRGB(130, 105, 110)
-    box.Text = ""
-    box.TextColor3 = accentColor
-    box.TextSize = 12
-    box.ClearTextOnFocus = false
-    box.Parent = container
-    addCorner(box, 4)
-
-    local actionBtn = Instance.new("TextButton")
-    actionBtn.Size = UDim2.new(0.25, 0, 0, 28)
-    actionBtn.Position = UDim2.new(0.73, 0, 0.5, -14)
-    actionBtn.BackgroundColor3 = Color3.fromRGB(65, 15, 22)
-    actionBtn.BorderSizePixel = 0
-    actionBtn.Font = Enum.Font.GothamBold
-    actionBtn.Text = actionLabel
-    actionBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
-    actionBtn.TextSize = 11
-    actionBtn.Parent = container
-    addCorner(actionBtn, 4)
-
-    return box, actionBtn
-end
-
-local function createSliderRow(parent, labelText, minVal, maxVal, initialVal, suffix, accentColor, order, onChanged)
-    local container = Instance.new("Frame")
-    container.Size = UDim2.new(1, 0, 0, 52)
-    container.BackgroundColor3 = Color3.fromRGB(22, 16, 20)
-    container.BackgroundTransparency = 0.3
-    container.BorderSizePixel = 0
-    container.LayoutOrder = order
-    container.Parent = parent
-    addCorner(container, 4)
-
-    local clampedInit = math.clamp(initialVal, minVal, maxVal)
-    local ratio = (maxVal > minVal) and ((clampedInit - minVal) / (maxVal - minVal)) or 0
-
-    local topLine = Instance.new("Frame")
-    topLine.Size = UDim2.new(1, -20, 0, 20)
-    topLine.Position = UDim2.new(0, 10, 0, 4)
-    topLine.BackgroundTransparency = 1
-    topLine.Parent = container
-
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(0.65, 0, 1, 0)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamSemibold
-    title.Text = labelText
-    title.TextColor3 = Color3.fromRGB(210, 190, 185)
-    title.TextSize = 12
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.Parent = topLine
-
-    local valueLabel = Instance.new("TextLabel")
-    valueLabel.Size = UDim2.new(0.35, 0, 1, 0)
-    valueLabel.Position = UDim2.new(0.65, 0, 0, 0)
-    valueLabel.BackgroundTransparency = 1
-    valueLabel.Font = Enum.Font.GothamBold
-    valueLabel.Text = tostring(clampedInit) .. (suffix or "")
-    valueLabel.TextColor3 = accentColor
-    valueLabel.TextSize = 12
-    valueLabel.TextXAlignment = Enum.TextXAlignment.Right
-    valueLabel.Parent = topLine
-
-    local track = Instance.new("Frame")
-    track.Size = UDim2.new(1, -20, 0, 8)
-    track.Position = UDim2.new(0, 10, 0, 32)
-    track.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-    track.BorderSizePixel = 0
-    track.Parent = container
-    addCorner(track, 4)
-
-    local fill = Instance.new("Frame")
-    fill.Size = UDim2.new(ratio, 0, 1, 0)
-    fill.BackgroundColor3 = Color3.fromRGB(145, 25, 35)
-    fill.BorderSizePixel = 0
-    fill.Parent = track
-    addCorner(fill, 4)
-
-    local knob = Instance.new("Frame")
-    knob.Size = UDim2.new(0, 14, 0, 14)
-    knob.AnchorPoint = Vector2.new(0.5, 0.5)
-    knob.Position = UDim2.new(ratio, 0, 0.5, 0)
-    knob.BackgroundColor3 = accentColor
-    knob.BorderSizePixel = 0
-    knob.Parent = track
-    addCorner(knob, 7)
-
-    local sliding = false
-
-    local function applyFromX(inputX)
-        local absPos = track.AbsolutePosition.X
-        local absSize = math.max(track.AbsoluteSize.X, 1)
-        local alpha = math.clamp((inputX - absPos) / absSize, 0, 1)
-        local raw = minVal + (alpha * (maxVal - minVal))
-        local stepped = math.round(raw)
-        local finalRatio = (maxVal > minVal) and ((stepped - minVal) / (maxVal - minVal)) or 0
-        fill.Size = UDim2.new(finalRatio, 0, 1, 0)
-        knob.Position = UDim2.new(finalRatio, 0, 0.5, 0)
-        valueLabel.Text = tostring(stepped) .. (suffix or "")
-        if onChanged then
-            onChanged(stepped)
-        end
-    end
-
-    track.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = true
-            applyFromX(input.Position.X)
-        end
-    end)
-
-    knob.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = true
-            applyFromX(input.Position.X)
-        end
-    end)
-
-    trackConnection(UserInputService.InputChanged:Connect(function(input)
-        if sliding and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
-            applyFromX(input.Position.X)
-        end
-    end))
-
-    trackConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
-            sliding = false
-        end
-    end))
 end
 
 -- Main ScreenGui & Window Setup
@@ -592,12 +426,12 @@ local catLayout = Instance.new("UIListLayout")
 catLayout.FillDirection = Enum.FillDirection.Horizontal
 catLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 catLayout.SortOrder = Enum.SortOrder.LayoutOrder
-catLayout.Padding = UDim.new(0, 4)
+catLayout.Padding = UDim.new(0, 6)
 catLayout.Parent = categoryBar
 
 local function createTabButton(name, order)
     local btn = Instance.new("TextButton")
-    btn.Size = UDim2.new(0.24, 0, 1, 0)
+    btn.Size = UDim2.new(0.32, 0, 1, 0)
     btn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     btn.BackgroundTransparency = 0.4
     btn.BorderSizePixel = 0
@@ -614,7 +448,6 @@ end
 local espTabBtn = createTabButton("Sovereignty", 1)
 local combatTabBtn = createTabButton("Ritual", 2)
 local playerTabBtn = createTabButton("Vessel", 3)
-local codexTabBtn = createTabButton("Codex", 4)
 
 local function createTabContainer(name, canvasHeight)
     local frame = Instance.new("ScrollingFrame")
@@ -638,7 +471,6 @@ end
 local espContainer = createTabContainer("ESPContainer", 850)
 local combatContainer = createTabContainer("CombatContainer", 1080)
 local playerContainer = createTabContainer("PlayerContainer", 1200)
-local codexContainer = createTabContainer("CodexContainer", 940)
 local settingsContainer = createTabContainer("SettingsContainer", 620)
 
 espContainer.Visible = true
@@ -714,8 +546,8 @@ local function terminateScript()
         State.FlingActive = false
     end
 
-    if stopCodexUtilities then
-        pcall(stopCodexUtilities)
+    if stopSettingsUtilities then
+        pcall(stopSettingsUtilities)
     end
 
     State.hoverEnabled = false
@@ -1194,110 +1026,6 @@ local seatedSwimButton = createButton(playerContainer, "Submerged Seated Glide: 
 local spinButton = createButton(playerContainer, "Vortex Spin: OFF", Color3.fromRGB(230, 140, 140), 11)
 local spinSpeedBox = createNumberInputRow(playerContainer, "Vortex Velocity:", 0, Color3.fromRGB(230, 140, 140), 12)
 
--- Codex Tab (Remaining Universal Utilities: Toggles, Text Inputs, Sliders, and Goto Humanoid Lists)
-local clickTpBtn = createButton(codexContainer, "Click Teleport (Ctrl+Click): OFF", Color3.fromRGB(220, 140, 140), 1)
-
-local walkSpeedBox, walkSpeedApplyBtn = createTextActionRow(codexContainer, "WalkSpeed:", "e.g. 32", "Apply", Color3.fromRGB(240, 140, 140), 2)
-local jumpPowerBox, jumpPowerApplyBtn = createTextActionRow(codexContainer, "JumpPower:", "e.g. 100", "Apply", Color3.fromRGB(240, 140, 140), 3)
-
-local gotoPanel = Instance.new("Frame")
-gotoPanel.Name = "GotoHumanoidPanel"
-gotoPanel.Size = UDim2.new(1, 0, 0, 232)
-gotoPanel.BackgroundColor3 = Color3.fromRGB(18, 12, 16)
-gotoPanel.BackgroundTransparency = 0.3
-gotoPanel.BorderSizePixel = 0
-gotoPanel.LayoutOrder = 4
-gotoPanel.Parent = codexContainer
-addCorner(gotoPanel, 4)
-
-local gotoHeader = Instance.new("TextLabel")
-gotoHeader.Size = UDim2.new(1, -16, 0, 22)
-gotoHeader.Position = UDim2.new(0, 8, 0, 4)
-gotoHeader.BackgroundTransparency = 1
-gotoHeader.Font = Enum.Font.GothamBold
-gotoHeader.Text = "Goto Humanoid"
-gotoHeader.TextColor3 = Color3.fromRGB(220, 140, 140)
-gotoHeader.TextSize = 12
-gotoHeader.TextXAlignment = Enum.TextXAlignment.Left
-gotoHeader.Parent = gotoPanel
-
-local gotoSearchBg = Instance.new("Frame")
-gotoSearchBg.Size = UDim2.new(1, -16, 0, 28)
-gotoSearchBg.Position = UDim2.new(0, 8, 0, 28)
-gotoSearchBg.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-gotoSearchBg.BackgroundTransparency = 0.2
-gotoSearchBg.BorderSizePixel = 0
-gotoSearchBg.Parent = gotoPanel
-addCorner(gotoSearchBg, 4)
-
-local gotoSearchBox = Instance.new("TextBox")
-gotoSearchBox.Size = UDim2.new(1, -12, 1, 0)
-gotoSearchBox.Position = UDim2.new(0, 6, 0, 0)
-gotoSearchBox.BackgroundTransparency = 1
-gotoSearchBox.Font = Enum.Font.GothamSemibold
-gotoSearchBox.PlaceholderText = "Filter Vessels or Abominations..."
-gotoSearchBox.PlaceholderColor3 = Color3.fromRGB(150, 100, 100)
-gotoSearchBox.Text = ""
-gotoSearchBox.TextColor3 = Color3.fromRGB(240, 210, 210)
-gotoSearchBox.TextSize = 12
-gotoSearchBox.TextXAlignment = Enum.TextXAlignment.Left
-gotoSearchBox.ClearTextOnFocus = false
-gotoSearchBox.Parent = gotoSearchBg
-
-local gotoListsRow = Instance.new("Frame")
-gotoListsRow.Size = UDim2.new(1, -16, 1, -64)
-gotoListsRow.Position = UDim2.new(0, 8, 0, 60)
-gotoListsRow.BackgroundTransparency = 1
-gotoListsRow.Parent = gotoPanel
-
-local gotoRowLayout = Instance.new("UIListLayout")
-gotoRowLayout.FillDirection = Enum.FillDirection.Horizontal
-gotoRowLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-gotoRowLayout.SortOrder = Enum.SortOrder.LayoutOrder
-gotoRowLayout.Padding = UDim.new(0, 8)
-gotoRowLayout.Parent = gotoListsRow
-
-local function buildGotoColumn(order, titleText, titleColor, strokeColor)
-    local col = Instance.new("Frame")
-    col.Size = UDim2.new(0.49, 0, 1, 0)
-    col.BackgroundColor3 = Color3.fromRGB(14, 10, 13)
-    col.BackgroundTransparency = 0.35
-    col.BorderSizePixel = 0
-    col.LayoutOrder = order
-    col.Parent = gotoListsRow
-    addCorner(col, 4)
-
-    local lbl = Instance.new("TextLabel")
-    lbl.Size = UDim2.new(1, -8, 0, 20)
-    lbl.Position = UDim2.new(0, 4, 0, 2)
-    lbl.BackgroundTransparency = 1
-    lbl.Font = Enum.Font.GothamBold
-    lbl.Text = titleText
-    lbl.TextColor3 = titleColor
-    lbl.TextSize = 11
-    if strokeColor then
-        lbl.TextStrokeTransparency = 0.3
-        lbl.TextStrokeColor3 = strokeColor
-    end
-    lbl.Parent = col
-
-    local scroll = Instance.new("ScrollingFrame")
-    scroll.Size = UDim2.new(1, -6, 1, -24)
-    scroll.Position = UDim2.new(0, 3, 0, 22)
-    scroll.BackgroundTransparency = 1
-    scroll.BorderSizePixel = 0
-    scroll.ScrollBarThickness = 3
-    scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
-    scroll.Parent = col
-
-    return scroll
-end
-
-local gotoVesselsScroll = buildGotoColumn(1, "Vessels", Colors.VesselOutline, nil)
-local gotoAbomsScroll = buildGotoColumn(2, "Abominations", Colors.AbomText, Colors.AbomStroke)
-
-local placeTpBox, placeTpBtn = createTextActionRow(codexContainer, "Place ID:", "Numeric PlaceId", "Join", Color3.fromRGB(240, 140, 140), 5)
-
 local joystickFrame = Instance.new("Frame")
 joystickFrame.Name = "CustomJoystickBase"
 joystickFrame.Size = UDim2.new(0, 130, 0, 130)
@@ -1326,7 +1054,6 @@ local function switchTab(activeTab, activeBtn)
     espContainer.Visible = false
     combatContainer.Visible = false
     playerContainer.Visible = false
-    codexContainer.Visible = false
     settingsContainer.Visible = false
 
     espTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
@@ -1335,54 +1062,20 @@ local function switchTab(activeTab, activeBtn)
     combatTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
     playerTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
     playerTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
-    codexTabBtn.BackgroundColor3 = Color3.fromRGB(25, 18, 22)
-    codexTabBtn.TextColor3 = Color3.fromRGB(190, 175, 170)
 
     activeTab.Visible = true
     if activeBtn then
         activeBtn.BackgroundColor3 = Color3.fromRGB(90, 20, 25)
         activeBtn.TextColor3 = Color3.fromRGB(255, 220, 220)
     end
-    if activeTab == codexContainer and RefreshGotoLists then
-        RefreshGotoLists()
-    end
 end
 
 espTabBtn.MouseButton1Click:Connect(function() switchTab(espContainer, espTabBtn) end)
 combatTabBtn.MouseButton1Click:Connect(function() switchTab(combatContainer, combatTabBtn) end)
 playerTabBtn.MouseButton1Click:Connect(function() switchTab(playerContainer, playerTabBtn) end)
-codexTabBtn.MouseButton1Click:Connect(function() switchTab(codexContainer, codexTabBtn) end)
 gearButton.MouseButton1Click:Connect(function() switchTab(settingsContainer, nil) end)
 
--- Codex Sliders (FOV, Master Volume, FPS Cap)
-createSliderRow(codexContainer, "Field of View (FOV)", 40, 120, State.fovValue, "", Color3.fromRGB(240, 140, 140), 6, function(val)
-    State.fovValue = val
-    local cam = getActiveCamera()
-    if cam then
-        pcall(function() cam.FieldOfView = val end)
-    end
-end)
-
-createSliderRow(codexContainer, "Master Volume", 0, 10, State.volumeValue, "/10", Color3.fromRGB(240, 140, 140), 7, function(val)
-    State.volumeValue = val
-    pcall(function()
-        local gs = UserSettings():GetService("UserGameSettings")
-        if gs then
-            gs.MasterVolume = val / 10
-        end
-    end)
-end)
-
-createSliderRow(codexContainer, "FPS Cap (0 = Default)", 0, 240, State.fpsCapValue, " FPS", Color3.fromRGB(240, 140, 140), 8, function(val)
-    State.fpsCapValue = val
-    if type(setfpscap) == "function" then
-        pcall(function()
-            setfpscap(val > 0 and val or 9999)
-        end)
-    end
-end)
-
--- Settings & Codex Utility Functions
+-- Settings Utility Functions
 local function startAntiAfk()
     if Connections.antiAfk then Connections.antiAfk:Disconnect() end
     Connections.antiAfk = trackConnection(LocalPlayer.Idled:Connect(function()
@@ -1429,35 +1122,6 @@ local function applyCamNoclip(enabled)
     end)
 end
 
-local function startClickTp()
-    if Connections.clickTp then Connections.clickTp:Disconnect() end
-    Connections.clickTp = trackConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
-        if State.isTerminated or not State.clickTpEnabled or gameProcessed then return end
-        if input.UserInputType == Enum.UserInputType.MouseButton1 and UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then
-            local cam = getActiveCamera()
-            local char = LocalPlayer.Character
-            local root = getCharacterRoot(char)
-            if cam and root then
-                local mousePos = UserInputService:GetMouseLocation()
-                local unitRay = cam:ViewportPointToRay(mousePos.X, mousePos.Y)
-                local rp = RaycastParams.new()
-                rp.FilterType = Enum.RaycastFilterType.Exclude
-                rp.FilterDescendantsInstances = {char}
-                local res = Workspace:Raycast(unitRay.Origin, unitRay.Direction * 2500, rp)
-                local targetPos = res and (res.Position + Vector3.new(0, 3, 0)) or (unitRay.Origin + unitRay.Direction * 120)
-                pcall(function()
-                    root.CFrame = CFrame.new(targetPos)
-                    root.AssemblyLinearVelocity = Vector3.zero
-                end)
-            end
-        end
-    end))
-end
-
-local function stopClickTp()
-    if Connections.clickTp then Connections.clickTp:Disconnect() Connections.clickTp = nil end
-end
-
 local function isAdInstance(obj)
     local lowerName = obj.Name:lower()
     return string.find(lowerName, "ad", 1, true) ~= nil
@@ -1495,34 +1159,9 @@ local function stopAdPurge()
     if Connections.adPurge then Connections.adPurge:Disconnect() Connections.adPurge = nil end
 end
 
-trackConnection(RunService.Heartbeat:Connect(function()
-    if State.isTerminated then return end
-    local char = LocalPlayer.Character
-    local hum = char and char:FindFirstChildOfClass("Humanoid")
-    if hum then
-        if State.customWalkSpeedEnabled then
-            pcall(function() hum.WalkSpeed = State.customWalkSpeedValue end)
-        end
-        if State.customJumpEnabled then
-            pcall(function()
-                if hum.UseJumpPower then
-                    hum.JumpPower = State.customJumpValue
-                else
-                    hum.JumpHeight = State.customJumpValue
-                end
-            end)
-        end
-    end
-    local cam = getActiveCamera()
-    if cam and cam.FieldOfView ~= State.fovValue then
-        pcall(function() cam.FieldOfView = State.fovValue end)
-    end
-end))
-
-stopCodexUtilities = function()
+stopSettingsUtilities = function()
     stopAntiAfk()
     stopAutoRejoin()
-    stopClickTp()
     stopAdPurge()
     applyCamNoclip(false)
     pcall(function() RunService:Set3dRenderingEnabled(true) end)
@@ -1559,193 +1198,6 @@ if State.removeAdsEnabled then
     startAdPurge()
 end
 
-clickTpBtn.MouseButton1Click:Connect(function()
-    State.clickTpEnabled = not State.clickTpEnabled
-    clickTpBtn.Text = State.clickTpEnabled and "Click Teleport (Ctrl+Click): ON" or "Click Teleport (Ctrl+Click): OFF"
-    clickTpBtn.BackgroundColor3 = State.clickTpEnabled and Color3.fromRGB(80, 15, 20) or Color3.fromRGB(22, 16, 20)
-    if State.clickTpEnabled then startClickTp() else stopClickTp() end
-end)
-
-walkSpeedApplyBtn.MouseButton1Click:Connect(function()
-    local val = tonumber(walkSpeedBox.Text)
-    if val then
-        State.customWalkSpeedValue = val
-        State.customWalkSpeedEnabled = true
-        walkSpeedApplyBtn.Text = "Active"
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then pcall(function() hum.WalkSpeed = val end) end
-        notify("Codex", "WalkSpeed locked to " .. tostring(val), 2)
-    else
-        State.customWalkSpeedEnabled = false
-        walkSpeedApplyBtn.Text = "Apply"
-        notify("Codex", "Invalid WalkSpeed; override off.", 2)
-    end
-end)
-
-jumpPowerApplyBtn.MouseButton1Click:Connect(function()
-    local val = tonumber(jumpPowerBox.Text)
-    if val then
-        State.customJumpValue = val
-        State.customJumpEnabled = true
-        jumpPowerApplyBtn.Text = "Active"
-        local hum = LocalPlayer.Character and LocalPlayer.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            pcall(function()
-                if hum.UseJumpPower then
-                    hum.JumpPower = val
-                else
-                    hum.JumpHeight = val
-                end
-            end)
-        end
-        notify("Codex", "Jump power/height locked to " .. tostring(val), 2)
-    else
-        State.customJumpEnabled = false
-        jumpPowerApplyBtn.Text = "Apply"
-        notify("Codex", "Invalid jump value; override off.", 2)
-    end
-end)
-
-local function warpToHumanoidModel(model)
-    local targetRoot = model and model.Parent and getCharacterRoot(model)
-    local myRoot = getCharacterRoot(LocalPlayer.Character)
-    if targetRoot and myRoot then
-        pcall(function()
-            myRoot.CFrame = targetRoot.CFrame * CFrame.new(0, 3, 2)
-            myRoot.AssemblyLinearVelocity = Vector3.zero
-        end)
-        notify("Codex", "Warped to " .. model.Name, 2)
-    else
-        notify("Codex", "Target humanoid unavailable.", 2)
-    end
-end
-
-local function populateGotoColumn(scrollFrame, entries, filterText, isPlayer)
-    for _, child in ipairs(scrollFrame:GetChildren()) do
-        child:Destroy()
-    end
-
-    local yPos = 4
-    for _, item in ipairs(entries) do
-        local searchHaystack = (item.Name .. " " .. (item.DisplayName or "")):lower()
-        if filterText == "" or string.find(searchHaystack, filterText, 1, true) then
-            local btn = Instance.new("TextButton")
-            btn.Size = UDim2.new(1, -4, 0, 24)
-            btn.Position = UDim2.new(0, 2, 0, yPos)
-            btn.BackgroundColor3 = Color3.fromRGB(24, 16, 20)
-            btn.BorderSizePixel = 0
-            btn.Font = Enum.Font.GothamSemibold
-            btn.TextSize = 11
-            btn.TextXAlignment = Enum.TextXAlignment.Left
-            btn.TextColor3 = isPlayer and Colors.VesselOutline or Colors.AbomText
-            if not isPlayer then
-                btn.TextStrokeTransparency = 0.3
-                btn.TextStrokeColor3 = Colors.AbomStroke
-            end
-            local distTag = (item.Distance and item.Distance ~= math.huge) and string.format(" [%dm]", math.floor(item.Distance)) or ""
-            btn.Text = "  " .. item.Name .. distTag
-            btn.Parent = scrollFrame
-            addCorner(btn, 3)
-
-            local targetModel = item.Model
-            btn.MouseButton1Click:Connect(function()
-                warpToHumanoidModel(targetModel)
-            end)
-
-            yPos = yPos + 26
-        end
-    end
-
-    scrollFrame.CanvasSize = UDim2.new(0, 0, 0, yPos + 4)
-end
-
-RefreshGotoLists = function()
-    if State.isTerminated then return end
-    local vessels = {}
-    local abominations = {}
-    local seenModels = {}
-
-    local myChar = LocalPlayer.Character
-    local myRoot = getCharacterRoot(myChar)
-    local cam = getActiveCamera()
-    local originPos = myRoot and myRoot.Position or (cam and cam.CFrame.Position or Vector3.new())
-
-    for _, plr in ipairs(Players:GetPlayers()) do
-        if plr ~= LocalPlayer and plr.Character then
-            local hum = plr.Character:FindFirstChildOfClass("Humanoid")
-            local root = getCharacterRoot(plr.Character)
-            if hum and hum.Health > 0 and not seenModels[plr.Character] then
-                seenModels[plr.Character] = true
-                local dist = root and (originPos - root.Position).Magnitude or math.huge
-                table.insert(vessels, {
-                    Name = plr.Name,
-                    DisplayName = plr.DisplayName,
-                    Model = plr.Character,
-                    Distance = dist
-                })
-            end
-        end
-    end
-
-    for _, obj in ipairs(Workspace:GetDescendants()) do
-        if obj:IsA("Humanoid") then
-            local model = obj.Parent
-            if model and model:IsA("Model") and model ~= myChar and not seenModels[model] and obj.Health > 0 then
-                seenModels[model] = true
-                local root = getCharacterRoot(model)
-                local dist = root and (originPos - root.Position).Magnitude or math.huge
-                if Players:GetPlayerFromCharacter(model) then
-                    table.insert(vessels, {
-                        Name = model.Name,
-                        DisplayName = model.Name,
-                        Model = model,
-                        Distance = dist
-                    })
-                else
-                    table.insert(abominations, {
-                        Name = model.Name,
-                        DisplayName = model.Name,
-                        Model = model,
-                        Distance = dist
-                    })
-                end
-            end
-        end
-    end
-
-    table.sort(vessels, function(a, b) return a.Name:lower() < b.Name:lower() end)
-    table.sort(abominations, function(a, b) return a.Name:lower() < b.Name:lower() end)
-
-    local filterText = gotoSearchBox.Text:lower():gsub("^%s+", ""):gsub("%s+$", "")
-    populateGotoColumn(gotoVesselsScroll, vessels, filterText, true)
-    populateGotoColumn(gotoAbomsScroll, abominations, filterText, false)
-end
-
-gotoSearchBox:GetPropertyChangedSignal("Text"):Connect(RefreshGotoLists)
-
-task.spawn(function()
-    while screenGui.Parent and not State.isTerminated do
-        if codexContainer.Visible then
-            RefreshGotoLists()
-        end
-        task.wait(3)
-    end
-end)
-
-RefreshGotoLists()
-
-placeTpBtn.MouseButton1Click:Connect(function()
-    local placeId = tonumber(placeTpBox.Text)
-    if placeId and placeId > 0 then
-        notify("Codex", "Teleporting to Place " .. tostring(placeId) .. "...", 2)
-        pcall(function()
-            TeleportService:Teleport(placeId, LocalPlayer)
-        end)
-    else
-        notify("Codex", "Enter a valid numeric Place ID.", 2)
-    end
-end)
-
 -- Accurate weight calculation using part:GetMass()
 local function getModelMassKg(model)
     local totalMass = 0
@@ -1757,6 +1209,65 @@ local function getModelMassKg(model)
         end
     end)
     return math.floor(totalMass)
+end
+
+local function getTargetSizeProfile(model, fallbackPart)
+    local centerPos = fallbackPart and fallbackPart.Position or Vector3.zero
+    local boxSize = fallbackPart and fallbackPart.Size or Vector3.new(4, 5, 2)
+    local isLarge = false
+
+    if model and model.Parent then
+        local ok, cf, size = pcall(function() return model:GetBoundingBox() end)
+        if ok and cf and size then
+            centerPos = cf.Position
+            boxSize = size
+        end
+    end
+
+    local maxHoriz = math.max(boxSize.X, boxSize.Z)
+    if maxHoriz > FlingConfig.NormalExtentThreshold or boxSize.Y > (FlingConfig.NormalExtentThreshold * 1.15) then
+        isLarge = true
+    end
+
+    local orbitRadius = FlingConfig.OrbitRadius
+    if isLarge then
+        local scaledRadius = math.max(boxSize.X, boxSize.Z) * 0.32
+        orbitRadius = math.clamp(scaledRadius, FlingConfig.OrbitRadius, FlingConfig.MaxOrbitRadius)
+    end
+
+    return {
+        isLarge = isLarge,
+        centerPos = centerPos,
+        boxSize = boxSize,
+        orbitRadius = orbitRadius
+    }
+end
+
+local function selectBestContactPart(model, defaultPart, anchorPos, isLarge)
+    if not isLarge or not model or not model.Parent then
+        return defaultPart
+    end
+
+    local bestPart = defaultPart
+    local bestScore = math.huge
+    local refPos = anchorPos or (defaultPart and defaultPart.Position)
+
+    pcall(function()
+        for _, obj in ipairs(model:GetDescendants()) do
+            if obj:IsA("BasePart") and not obj.Anchored then
+                local dist = refPos and (obj.Position - refPos).Magnitude or 0
+                local volume = math.max(obj.Size.X * obj.Size.Y * obj.Size.Z, 1)
+                local collideBias = obj.CanCollide and 0.65 or 1.25
+                local score = (dist * collideBias) / math.clamp(math.log10(volume + 10), 1, 3.5)
+                if score < bestScore then
+                    bestScore = score
+                    bestPart = obj
+                end
+            end
+        end
+    end)
+
+    return bestPart or defaultPart
 end
 
 local function isTargetAnchored(charModel, humanoid)
@@ -2283,8 +1794,8 @@ local function clearFlingMovers()
     end
 end
 
-local function computePredictedTargetPos(rootPart, targetPart, targetHum, lastVel, dt)
-    local actualPos = targetPart.Position
+local function computePredictedTargetPos(rootPart, targetPart, targetHum, lastVel, dt, anchorPos)
+    local actualPos = anchorPos or targetPart.Position
     local targetVel = targetPart.AssemblyLinearVelocity
     if not State.movementPredictorEnabled or targetVel.Magnitude < 0.25 then
         return actualPos, targetVel
@@ -2363,8 +1874,11 @@ local function peakFlingModel(targetData, runToken)
 
     local TRootPart = (THumanoid and THumanoid.RootPart) or getCharacterRoot(TCharacter)
     local seatPart = THumanoid and THumanoid.SeatPart
-    local targetPart = seatPart or TRootPart or TCharacter:FindFirstChild("Head") or TCharacter:FindFirstChildWhichIsA("BasePart")
-    if not targetPart then return end
+    local baseTargetPart = seatPart or TRootPart or TCharacter:FindFirstChild("Head") or TCharacter:FindFirstChildWhichIsA("BasePart")
+    if not baseTargetPart then return end
+
+    local initialProfile = getTargetSizeProfile(TCharacter, baseTargetPart)
+    local targetPart = selectBestContactPart(TCharacter, baseTargetPart, RootPart.Position, initialProfile.isLarge)
 
     if cam then
         pcall(function()
@@ -2415,7 +1929,10 @@ local function peakFlingModel(targetData, runToken)
 
     pcall(function() Workspace.FallenPartsDestroyHeight = 0/0 end)
 
-    local massScale = math.clamp(math.pow(GetModelMass(TCharacter), 1.15), 1, 25)
+    local massScale = initialProfile.isLarge
+        and math.clamp(math.pow(GetModelMass(TCharacter), 1.2), 1, 35)
+        or math.clamp(math.pow(GetModelMass(TCharacter), 1.15), 1, 25)
+    local activeMaxLunge = initialProfile.isLarge and (FlingConfig.MaxLungeSeconds * 1.35) or FlingConfig.MaxLungeSeconds
     local lastVel = targetPart.AssemblyLinearVelocity
     local lastSample = tick()
     local startedAt = lastSample
@@ -2435,7 +1952,7 @@ local function peakFlingModel(targetData, runToken)
         if not TCharacter.Parent or isTargetAnchored(TCharacter, THumanoid) then
             break
         end
-        if (tick() - startedAt) >= FlingConfig.MaxLungeSeconds then
+        if (tick() - startedAt) >= activeMaxLunge then
             break
         end
 
@@ -2443,7 +1960,11 @@ local function peakFlingModel(targetData, runToken)
         local dt = now - lastSample
         lastSample = now
 
-        local predictedPos, currentVel = computePredictedTargetPos(RootPart, targetPart, THumanoid, lastVel, dt)
+        local profile = getTargetSizeProfile(TCharacter, baseTargetPart)
+        targetPart = selectBestContactPart(TCharacter, baseTargetPart, RootPart.Position, profile.isLarge)
+        local anchorPos = profile.isLarge and profile.centerPos or targetPart.Position
+
+        local predictedPos, currentVel = computePredictedTargetPos(RootPart, targetPart, THumanoid, lastVel, dt, anchorPos)
         lastVel = currentVel
 
         if currentVel.Magnitude >= FlingConfig.EarlyExitSpeed then
@@ -2451,14 +1972,23 @@ local function peakFlingModel(targetData, runToken)
         end
 
         State.orbitAngleCounter = State.orbitAngleCounter + FlingConfig.OrbitStep
+        local activeRadius = profile.isLarge and profile.orbitRadius or FlingConfig.OrbitRadius
         local microOffset = Vector3.new(
-            math.cos(State.orbitAngleCounter) * FlingConfig.OrbitRadius,
+            math.cos(State.orbitAngleCounter) * activeRadius,
             0,
-            math.sin(State.orbitAngleCounter) * FlingConfig.OrbitRadius
+            math.sin(State.orbitAngleCounter) * activeRadius
         )
 
         local contactPos = predictedPos + microOffset
-        local contactCFrame = CFrame.lookAt(contactPos, predictedPos) * CFrame.Angles(math.rad(90), 0, 0)
+        local lookDir = Vector3.new(predictedPos.X - contactPos.X, 0, predictedPos.Z - contactPos.Z)
+        if lookDir.Magnitude < 1e-4 then
+            lookDir = Vector3.new(0, 0, -1)
+        else
+            lookDir = lookDir.Unit
+        end
+        local rightDown = Vector3.new(0, -1, 0)
+        local upVec = rightDown:Cross(lookDir).Unit
+        local contactCFrame = CFrame.fromMatrix(contactPos, rightDown, upVec, -lookDir)
         local launchVel = computeLaunchVelocity(FlingDirections[State.currentDirIndex], massScale)
 
         pcall(function()
